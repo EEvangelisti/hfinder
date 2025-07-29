@@ -1,0 +1,8 @@
+{
+    "image-0001.tif": 1,
+    "image-0002.tif": 1,
+    "image-0004.tif": {"channel": 1, "segment": "image-0004_nuclei.json"},
+    "image-0005.tif": {"channel": 1, "segment": "image-0005_nuclei.json"},
+    "image-0006.tif": {"channel": 1, "segment": "image-0006_nuclei.json"},
+    "image-0007.tif": {"channel": 1, "segment": "image-0007_nuclei.json"},
+}
