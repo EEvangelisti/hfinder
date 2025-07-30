@@ -48,29 +48,7 @@ def load_json(json_path):
     except Exception as e:
         return None
 
-def resize_multichannel_image(img):
-    """
-    Resize a multichannel image (C, H, W) to the given size using bilinear 
-    interpolation per channel.
 
-    Args:
-        img (np.ndarray): Input image of shape (C, H, W).
-        target_size (tuple): (height, width) desired.
-
-    Returns:
-        np.ndarray: Resized image of shape (C, target_height, target_width).
-    """
-    import cv2
-    from numpy import empty
-
-    target_size = HFinder_settings.get("target_size")
-    c, h, w = img.shape
-    resized = empty((c, *target_size), dtype=img.dtype)
-    for i in range(c):
-        resized[i] = cv2.resize(img[i], (target_size[1], target_size[0]), interpolation=cv2.INTER_LINEAR)
-    ratios = tuple(x / w for x in target_size)
-    assert(ratios[0] == ratios[1])
-    return resized, ratios[0]
 
 def make_binary_mask(img, hyphae_channel):
     """

@@ -3,8 +3,7 @@
 
 SETTINGS = {
     "tiff_dir": "data",
-    "channels": "hyphae.json",
-    "thresholds": "thresholds.json",
+    "default_auto_threshold": 90,
     "target_size" : (640, 640),
     "epochs": 100,
 }

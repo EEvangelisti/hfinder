@@ -9,7 +9,10 @@ import hfinder_preprocess as HFinder_preprocess
 # TODO: Remove at the end of development.
 def dev(args):
     HFinder_settings.load(args)
-    print(HFinder_preprocess.load_class_definitions())
+    print("(HFinder) Creating folders...")
+    folder_tree = HFinder_folders.create_training_folders()
+    out = HFinder_preprocess.generate_training_dataset(folder_tree)
+    print(out)
 
 
 def generate_dataset(args, silent=False):
