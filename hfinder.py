@@ -38,10 +38,10 @@ def main():
     # ---- Subcommand: train ----
     parser_train = subparsers.add_parser("train", help="Train YOLOv8 model on hyphae dataset")
     parser_train.add_argument("--epochs", type=int,
-                              default=HFinder_log.get("epochs"),
+                              default=HFinder_settings.get("epochs"),
                               help="Number of training epochs")
     parser_train.add_argument("--model", type=str,
-                              default=HFinder_log.get("model"),
+                              default=HFinder_settings.get("model"),
                               help="Base model")
     parser_train.set_defaults(func=train)
 
