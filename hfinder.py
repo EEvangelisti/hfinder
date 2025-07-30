@@ -3,6 +3,13 @@ import hfinder_train as HFinder_train
 import hfinder_hyphae as HFinder_hyphae
 import hfinder_folders as HFinder_folders
 import hfinder_settings as HFinder_settings
+import hfinder_preprocess as HFinder_preprocess
+
+
+# TODO: Remove at the end of development.
+def dev(args):
+    HFinder_settings.load(args)
+    print(HFinder_preprocess.load_class_definitions())
 
 
 def generate_dataset(args, silent=False):
@@ -28,6 +35,10 @@ def main():
     parser = argparse.ArgumentParser(prog="hfinder", description="HFinder CLI for hyphae datasets")
     subparsers = parser.add_subparsers(title="subcommands", dest="command")
     subparsers.required = True
+
+    # ---- Subcommand: dev ----
+    parser_check = subparsers.add_parser("dev", help="Generate and validate binary masks")
+    parser_check.set_defaults(func=dev)
 
     # ---- Subcommand: check_masks ----
     parser_check = subparsers.add_parser("check", help="Generate and validate binary masks")
