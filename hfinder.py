@@ -7,15 +7,6 @@ import hfinder_settings as HFinder_settings
 import hfinder_preprocess as HFinder_preprocess
 
 
-# TODO: Remove at the end of development.
-def dev(args):
-    HFinder_settings.load(args)
-    HFinder_log.info("Creating folders...")
-    folder_tree = HFinder_folders.create_training_folders()
-    HFinder_preprocess.generate_training_dataset(folder_tree)
-    HFinder_train.train_yolo_model(folder_tree)
-
-
 def generate_dataset(args, silent=False):
     HFinder_settings.load(args)
     print("(HFinder) Creating folders...")
@@ -27,22 +18,18 @@ def generate_dataset(args, silent=False):
     return folder_tree
 
 
-
 def train(args):
-    folder_tree = generate_dataset(args, silent=True)
-    print("(HFinder) Training YOLOv8 for {args.epochs} epochs with model {args.model}...")
-    HFinder_train.train_yolo_model_hyphae(folder_tree)
-    print("(HFinder) OK")
+    HFinder_settings.load(args)
+    HFinder_log.info("Creating folders...")
+    folder_tree = HFinder_folders.create_training_folders()
+    HFinder_preprocess.generate_training_dataset(folder_tree)
+    HFinder_train.train_yolo_model(folder_tree)
 
 
 def main():
     parser = argparse.ArgumentParser(prog="hfinder", description="HFinder CLI for hyphae datasets")
     subparsers = parser.add_subparsers(title="subcommands", dest="command")
     subparsers.required = True
-
-    # ---- Subcommand: dev ----
-    parser_check = subparsers.add_parser("dev", help="Generate and validate binary masks")
-    parser_check.set_defaults(func=dev)
 
     # ---- Subcommand: check_masks ----
     parser_check = subparsers.add_parser("check", help="Generate and validate binary masks")
@@ -57,10 +44,6 @@ def main():
     # ---- Parse args and dispatch ----
     args = parser.parse_args()
     args.func(args)
-
-
-
-
 
 
 if __name__ == '__main__':
