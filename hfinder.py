@@ -9,9 +9,9 @@ import hfinder_preprocess as HFinder_preprocess
 
 def generate_dataset(args, silent=False):
     HFinder_settings.load(args)
-    print("(HFinder) Creating folders...")
+    print("(HFinder) Creating folders")
     folder_tree = HFinder_folders.create_training_folders()
-    print("(HFinder) Generating dataset...")
+    print("(HFinder) Generating dataset")
     HFinder_hyphae.generate_dataset(folder_tree)
     if not silent:
         print("(HFinder) OK")
@@ -20,7 +20,7 @@ def generate_dataset(args, silent=False):
 
 def train(args):
     HFinder_settings.load(args)
-    HFinder_log.info("Creating folders...")
+    HFinder_log.info("Creating folders")
     folder_tree = HFinder_folders.create_training_folders()
     HFinder_preprocess.generate_training_dataset(folder_tree)
     HFinder_train.train_yolo_model(folder_tree)

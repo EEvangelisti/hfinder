@@ -280,14 +280,8 @@ def generate_dataset(folder_tree, base, split_flag, channels, polygons_per_chann
         rgb = np.clip(rgb, 0, 1)
         return (rgb * 255).astype(np.uint8)
 
-    def convert_polygon_to_yolo_bbox(polygon, img_w, img_h):
-        xs = [p[0] for p in polygon]
-        ys = [p[1] for p in polygon]
-        x_center = (min(xs) + max(xs)) / 2 / img_w
-        y_center = (min(ys) + max(ys)) / 2 / img_h
-        box_w = (max(xs) - min(xs)) / img_w
-        box_h = (max(ys) - min(ys)) / img_h
-        return x_center, y_center, box_w, box_h
+    def convert_polygon_to_yolo_segmentation(polygon):
+        return [coord for point in polygon for coord in point]
 
     def make_filename(base, combo):
         return f"{os.path.splitext(base)[0]}_" + "_".join(map(str, combo)) + ".jpg"
@@ -295,14 +289,15 @@ def generate_dataset(folder_tree, base, split_flag, channels, polygons_per_chann
     def save_image_as_jpg(img_rgb, path):
         Image.fromarray(img_rgb).save(path, "JPEG")
 
-    def save_annotations_yolo_format(path, polygons, img_w, img_h, class_ids):
-        with open(path, "w") as f:
+    def save_yolo_segmentation_label(file_path, polygons, class_ids, img_w, img_h):
+        with open(file_path, "w") as f:
             for class_name, poly in polygons:
                 if class_name not in class_ids:
                     continue
                 class_id = class_ids[class_name]
-                bbox = convert_polygon_to_yolo_bbox(poly, img_w, img_h)
-                f.write(f"{class_id} {' '.join(f'{v:.6f}' for v in bbox)}\n")
+                poly = convert_polygon_to_yolo_segmentation(poly)
+                line = [str(class_id)] + [f"{x:.6f}" for x in poly]
+                f.write(" ".join(line) + "\n")
 
     # Détermination du sous-dossier (train/val)
     split = "train" if split_flag else "val"
@@ -324,7 +319,7 @@ def generate_dataset(folder_tree, base, split_flag, channels, polygons_per_chann
         annotations = list(chain.from_iterable(polygons_per_channel.get(ch, []) for ch in combo))
         if annotations:
             label_path = os.path.join(lbl_dir, os.path.splitext(filename)[0] + ".txt")
-            save_annotations_yolo_format(label_path, annotations, img_w, img_h, class_ids)
+            save_yolo_segmentation_label(label_path, annotations, class_ids, img_w, img_h)
 
 
 

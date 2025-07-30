@@ -65,7 +65,7 @@ def train_yolo_model(folder_tree, **kwargs):
     os.makedirs(os.path.dirname(log_path), exist_ok=True)
     HFinder_folders.append_subtree(folder_tree, "log", log_path)
 
-    HFinder_log.info(f"Training YOLOv8 for {epochs} epochs with model {model}...")
+    HFinder_log.info(f"Training YOLOv8 for {epochs} epochs with model {model}")
     stdout_fd, stderr_fd = redirect_all_output(log_path)
     try:       
         yolo.train(data=data_yaml_path,
