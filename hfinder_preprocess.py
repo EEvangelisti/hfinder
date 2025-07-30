@@ -1,17 +1,20 @@
 import os
 import cv2
 import json
+import yaml
 import random
 import tifffile
 import numpy as np
 import matplotlib.pyplot as plt
 from glob import glob
+from pathlib import Path
 from collections import defaultdict
 from itertools import chain, combinations
 from PIL import Image
 from numpy import stack, uint8
 from matplotlib.colors import hsv_to_rgb
 import hfinder_log as HFinder_log
+import hfinder_folders as HFinder_folders
 import hfinder_settings as HFinder_settings
 
 
@@ -30,6 +33,27 @@ def load_class_definitions():
     class_files = sorted(glob(os.path.join(class_dir, "*.json")))
     class_names = [os.path.splitext(os.path.basename(f))[0] for f in class_files]
     return {name: idx for idx, name in enumerate(class_names)}
+
+
+
+def write_yolo_yaml(class_ids, folder_tree):
+    root = folder_tree["root"]
+    train_dir = os.path.join(root, "dataset", "images", "train")
+    val_dir = os.path.join(root, "dataset", "images", "val")
+
+    data = {
+        "path": root,
+        "train": train_dir,
+        "val": val_dir,
+        "nc": len(class_ids),
+        "names": [name for name, idx in sorted(class_ids.items(), key=lambda x: x[1])]
+    }
+
+    output_path = os.path.join(root, "dataset", "dataset.yaml")
+    with open(output_path, "w") as f:
+        yaml.dump(data, f, default_flow_style=False, sort_keys=False)
+
+    HFinder_folders.set_subtree(folder_tree, "dataset/yaml", output_path)
 
 
 
@@ -257,7 +281,6 @@ def generate_dataset(folder_tree, base, split_flag, channels, polygons_per_chann
         return (rgb * 255).astype(np.uint8)
 
     def convert_polygon_to_yolo_bbox(polygon, img_w, img_h):
-        print(polygon)
         xs = [p[0] for p in polygon]
         ys = [p[1] for p in polygon]
         x_center = (min(xs) + max(xs)) / 2 / img_w
@@ -293,7 +316,6 @@ def generate_dataset(folder_tree, base, split_flag, channels, polygons_per_chann
 
     for combo in power_set(polygons_per_channel.keys()):
         filename = make_filename(base, combo)
-        print(filename)
         img_rgb = compose_hue_fusion(channels, combo)
         img_path = os.path.join(img_dir, filename)
         save_image_as_jpg(img_rgb, img_path)
@@ -315,6 +337,7 @@ def generate_training_dataset(folder_tree):
     
     # Loads classes and preprocessing instructions.
     class_ids = load_class_definitions()
+    write_yolo_yaml(class_ids, folder_tree)
     class_instructions = load_image_class_mappings()
     target_size = HFinder_settings.get("target_size")
 

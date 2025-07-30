@@ -1,4 +1,5 @@
 import argparse
+import hfinder_log as HFinder_log
 import hfinder_train as HFinder_train
 import hfinder_hyphae as HFinder_hyphae
 import hfinder_folders as HFinder_folders
@@ -9,10 +10,10 @@ import hfinder_preprocess as HFinder_preprocess
 # TODO: Remove at the end of development.
 def dev(args):
     HFinder_settings.load(args)
-    print("(HFinder) Creating folders...")
+    HFinder_log.info("Creating folders...")
     folder_tree = HFinder_folders.create_training_folders()
-    out = HFinder_preprocess.generate_training_dataset(folder_tree)
-    print(out)
+    HFinder_preprocess.generate_training_dataset(folder_tree)
+    HFinder_train.train_yolo_model(folder_tree)
 
 
 def generate_dataset(args, silent=False):

@@ -6,6 +6,7 @@ SETTINGS = {
     "default_auto_threshold": 90,
     "target_size" : (640, 640),
     "epochs": 100,
+    "model": "yolov8n.pt"
 }
 
 def load(args):
