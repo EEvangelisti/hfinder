@@ -1,5 +1,6 @@
 import os
 from datetime import datetime
+import hfinder_log as HFinder_log
 
 def get_timestamp():
     """
@@ -47,6 +48,7 @@ def create_training_folders():
         <timestamp>/
         ├── dataset/
         │   ├── masks/
+        │   ├── contours/
         │   ├── images/
         │   │   ├── train/
         │   │   └── val/
@@ -63,10 +65,12 @@ def create_training_folders():
         tree = create_training_folders()
         print(tree["root"])  # e.g., /home/user/2025-07-27_18-52-11
     """
+    HFinder_log.info("Creating folders")
     base = get_timestamp()
     folder_tree = {
         "dataset": {
             "masks": [],
+            "contours": [],
             "images": {
                 "train": [],
                 "val": [],
