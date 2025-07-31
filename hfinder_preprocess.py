@@ -257,6 +257,50 @@ def colorize_with_hue(frame, hue):
 
 
 
+def generate_contours(folder_tree, base, polygons_per_channel, channels, class_ids):
+    root = folder_tree["root"]
+    contour_dir = os.path.join(root, "dataset", "contours")
+
+    # Palette simple de couleurs distinctes
+    palette = [
+        (255, 0, 255),   # magenta
+        (0, 255, 255),   # jaune clair
+        (0, 255, 0),     # vert
+        (255, 0, 0),     # bleu
+        (0, 128, 255),   # orange
+        (128, 0, 255),   # violet
+        (255, 255, 0),   # cyan
+        (255, 128, 0),   # corail
+    ]
+
+    for ch_name, polygons in polygons_per_channel.items():
+        img = channels[ch_name]
+        h, w = img.shape
+        overlay = cv2.cvtColor(img, cv2.COLOR_GRAY2BGR)
+
+        for class_name, poly in polygons:
+            if class_name not in class_ids:
+                continue
+            class_id = class_ids[class_name]
+            color = palette[class_id % len(palette)]
+
+            for poly in poly:  # liste de polygones
+                # poly est une liste plate : [x1, y1, x2, y2, ..., xn, yn]
+                if len(poly) < 6:
+                    continue  # ignore les artefacts trop petits (moins de 3 points)
+
+                pts = np.array(
+                    [(int(poly[i] * w), int(poly[i + 1] * h)) for i in range(0, len(poly), 2)],
+                    dtype=np.int32
+                ).reshape((-1, 1, 2))
+
+                cv2.polylines(overlay, [pts], isClosed=True, color=color, thickness=1)
+
+        out_path = os.path.join(contour_dir, f"{base}_{ch_name}_contours.png")
+        cv2.imwrite(out_path, overlay)
+
+
+
 def generate_dataset(folder_tree, base, split_flag, channels, polygons_per_channel):
     def power_set(iterable):
         """Sous-ensembles non vides jusqu'à 3 éléments."""
@@ -357,6 +401,7 @@ def generate_training_dataset(folder_tree):
         channels, ratio = resize_multichannel_image(img)   
         
         # Retrieve polygons for each class and generate dataset.  
-        polygons_per_channel = prepare_class_inputs(folder_tree, base, channels, class_instructions[img_name], ratio)       
+        polygons_per_channel = prepare_class_inputs(folder_tree, base, channels, class_instructions[img_name], ratio)  
+        generate_contours(folder_tree, base, polygons_per_channel, channels, class_ids)     
         generate_dataset(folder_tree, base, split_table[img_path], channels, polygons_per_channel)
 

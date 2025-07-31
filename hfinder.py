@@ -7,22 +7,15 @@ import hfinder_settings as HFinder_settings
 import hfinder_preprocess as HFinder_preprocess
 
 
-def generate_dataset(args, silent=False):
+def generate_training_dataset(args):
     HFinder_settings.load(args)
-    print("(HFinder) Creating folders")
     folder_tree = HFinder_folders.create_training_folders()
-    print("(HFinder) Generating dataset")
-    HFinder_hyphae.generate_dataset(folder_tree)
-    if not silent:
-        print("(HFinder) OK")
+    HFinder_preprocess.generate_training_dataset(folder_tree)
     return folder_tree
 
 
 def train(args):
-    HFinder_settings.load(args)
-    HFinder_log.info("Creating folders")
-    folder_tree = HFinder_folders.create_training_folders()
-    HFinder_preprocess.generate_training_dataset(folder_tree)
+    folder_tree = generate_training_dataset(args)
     HFinder_train.train_yolo_model(folder_tree)
 
 
@@ -33,7 +26,7 @@ def main():
 
     # ---- Subcommand: check_masks ----
     parser_check = subparsers.add_parser("check", help="Generate and validate binary masks")
-    parser_check.set_defaults(func=generate_dataset)
+    parser_check.set_defaults(func=generate_training_dataset)
 
     # ---- Subcommand: train ----
     parser_train = subparsers.add_parser("train", help="Train YOLOv8 model on hyphae dataset")
