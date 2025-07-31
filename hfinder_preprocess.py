@@ -333,13 +333,20 @@ def generate_contours(folder_tree, base, polygons_per_channel, channels, class_i
 
 
 
-def generate_dataset(folder_tree, base, split_flag, channels, polygons_per_channel):
-    def power_set(iterable):
-        """Sous-ensembles non vides jusqu'à 3 éléments."""
-        s = list(iterable)
-        return [combo for r in range(1, 4) for combo in combinations(s, r)]
-
-    def compose_hue_fusion(channels, selected_channels):
+def generate_dataset(folder_tree, base, n, c, split_flag, channels, polygons_per_channel):
+    def power_set(channels):
+        if n == 1:
+            s = list(channels)
+            return [combo for r in range(1, 4) for combo in combinations(s, r)]
+        
+        all_combos = []
+        for stack_index in range(n):
+            # Canaux de ce stack présents dans `channels`
+            group = [ch for ch in channels if (ch - 1) // c == stack_index]
+            for r in range(1, 4):
+                all_combos.extend(combinations(group, r))
+        return all_combos
+    def compose_hue_fusion(channels, selected_channels, noise_channels=None):
         """
         Compose an RGB image by blending each selected channel with a random hue.
         """
@@ -351,6 +358,14 @@ def generate_dataset(folder_tree, base, split_flag, channels, polygons_per_chann
             hue = np.random.rand()  # [0, 1)
             colored = colorize_with_hue(frame, hue)
             rgb += colored  # additive mixing
+
+        # Ajout de bruit visuel contrôlé
+        if noise_channels:
+            for ch in noise_channels:
+                frame = channels[ch]
+                hue = np.random.rand()
+                noise = colorize_with_hue(frame, hue)
+                rgb += noise  # Opacité réduite du bruit
 
         # Clip to [0, 1] in case of saturation, then scale to [0, 255]
         rgb = np.clip(rgb, 0, 1)
@@ -385,9 +400,26 @@ def generate_dataset(folder_tree, base, split_flag, channels, polygons_per_chann
     target_size = HFinder_settings.get("target_size")
     img_h, img_w = target_size
 
-    for combo in power_set(polygons_per_channel.keys()):
+    annotated_channels = {ch for ch, polys in polygons_per_channel.items() if polys}
+    all_channels = set(channels.keys())
+
+    print(f"polygons_per_channel.keys() = {polygons_per_channel.keys()}, list(annotated_channels) = {list(annotated_channels)}")
+    for combo in power_set(annotated_channels):
         filename = make_filename(base, combo)
-        img_rgb = compose_hue_fusion(channels, combo)
+        noise_candidates = list(all_channels - set(combo))
+        if n > 1:
+        # Prendre le canal avec l'indice minimum pour déduire le niveau
+            ref_ch = min(combo)
+            series_index = (ref_ch - 1) // c
+            allowed_noise = [series_index * c + i + 1 for i in range(c)]
+            noise_candidates = list(set(noise_candidates) & set(allowed_noise))
+            # Échantillonnage aléatoire des canaux de bruit
+            num_noise = np.random.randint(0, len(noise_candidates) + 1)
+            noise_channels = random.sample(noise_candidates, num_noise) if num_noise > 0 else []
+        else:
+            noise_channels = random.sample(noise_candidates, k=random.randint(1, len(noise_candidates)))
+        print(f"Image {base}, combo = {combo}, noise_channels = {noise_channels}, noise_candidates = {noise_candidates}")
+        img_rgb = compose_hue_fusion(channels, combo, noise_channels=noise_channels)
         img_path = os.path.join(img_dir, filename)
         save_image_as_jpg(img_rgb, img_path)
 
@@ -436,5 +468,5 @@ def generate_training_dataset(folder_tree):
         # Retrieve polygons for each class and generate dataset.  
         polygons_per_channel = prepare_class_inputs(folder_tree, base, channels, n, c, class_instructions[img_name], ratio)  
         generate_contours(folder_tree, base, polygons_per_channel, channels, class_ids)     
-        generate_dataset(folder_tree, base, split_table[img_path], channels, polygons_per_channel)
+        generate_dataset(folder_tree, base, n, c, split_table[img_path], channels, polygons_per_channel)
 
