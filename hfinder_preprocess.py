@@ -164,7 +164,7 @@ def channel_custom_segment(json_path, ratio):
 
 
 
-def prepare_class_inputs(folder_tree, base, channels, class_instructions, ratio):
+def prepare_class_inputs(folder_tree, base, channels, n, c, class_instructions, ratio):
     """
     Prepares class-specific inputs for a given image based on user-defined instructions.
 
@@ -188,32 +188,49 @@ def prepare_class_inputs(folder_tree, base, channels, class_instructions, ratio)
         ch = instr["channel"]
 
         if "threshold" in instr:
-            binary, polygons = channel_custom_threshold(channels[ch], instr["threshold"])
-            results[ch].append((class_name, polygons))
-            binary_output = os.path.join(folder_tree["root"], f"dataset/masks/{base}_{class_name}_mask.png")
-            plt.imsave(binary_output, binary, cmap='gray')
+            for i in range(n):
+                frame = i * c + ch
+                binary, polygons = channel_custom_threshold(channels[frame], instr["threshold"])
+                results[frame].append((class_name, polygons))
+                name = f"dataset/masks/{base}_{class_name}_mask.png" if n == 1 else f"dataset/masks/{base}_frame{frame}_{class_name}_mask.png"
+                binary_output = os.path.join(folder_tree["root"], name)
+                plt.imsave(binary_output, binary, cmap='gray')
 
         elif "segment" in instr:
+            if n > 1:
+                HFinder_log.fail("Applying user segmentation to Z-stacks has not been implemented yet")
             json_path = os.path.join(HFinder_settings.get("tiff_dir"), instr["segment"])
             polygons = channel_custom_segment(json_path, ratio)
             results[ch].append((class_name, polygons))
 
         else:
-            binary, polygons = channel_auto_threshold(channels[ch])
-            results[ch].append((class_name, polygons))
-            binary_output = os.path.join(folder_tree["root"], f"dataset/masks/{base}_{class_name}_mask.png")
-            plt.imsave(binary_output, binary, cmap='gray')
+            for i in range(n):
+                frame = i * c + ch
+                binary, polygons = channel_auto_threshold(channels[frame])
+                results[frame].append((class_name, polygons))
+                name = f"dataset/masks/{base}_{class_name}_mask.png" if n == 1 else f"dataset/masks/{base}_frame{frame}_{class_name}_mask.png"
+                binary_output = os.path.join(folder_tree["root"], name)
+                plt.imsave(binary_output, binary, cmap='gray')
 
     return results
 
 
+def is_stack(img):
+    return img.ndim == 4
+
 
 def is_channel_first(img):
-    if img.ndim != 3:
+    # Time series of z-stacks.
+    if img.ndim == 4:
+        _, c, h, w = img.shape
+        return c < 10 and h > 64 and w > 64
+    # Standard multichannel TIFF.
+    elif img.ndim == 3:
+        c, h, w = img.shape
+        return c < 10 and h > 64 and w > 64
+    # Other formats we cannot handle.
+    else:
         return False
-    c, h, w = img.shape
-    return c < 10 and h > 64 and w > 64
-
 
 
 def resize_multichannel_image(img):
@@ -230,13 +247,22 @@ def resize_multichannel_image(img):
     """
 
     target_size = HFinder_settings.get("target_size")
-    c, h, w = img.shape
-    resized = np.empty((c, *target_size), dtype=img.dtype)
-    for i in range(c):
-        resized[i] = cv2.resize(img[i], (target_size[1], target_size[0]), interpolation=cv2.INTER_LINEAR)
+ 
+    n = 1
+    if is_stack(img):
+        n, c, h, w = img.shape
+    else:
+        c, h, w = img.shape
+    resized = np.empty((n * c, *target_size), dtype=img.dtype)
+    for n_i in range(n):
+        for c_i in range(c):
+            index = n_i * c + c_i
+            frame = img[c_i] if n == 1 else img[n_i][c_i]
+            resized[index] = cv2.resize(frame, (target_size[1], target_size[0]), interpolation=cv2.INTER_LINEAR)
+
     ratios = tuple(x / w for x in target_size)
     assert(ratios[0] == ratios[1]) # TODO: Remove this?
-    return {i + 1: resized[i] for i in range(c)}, ratios[0]
+    return {i + 1: resized[i] for i in range(n * c)}, ratios[0], (n, c)
 
 
 
@@ -391,6 +417,7 @@ def generate_training_dataset(folder_tree):
         # Check whether there is something to detect on the image.
         # TODO: Maybe include these as noise-only images?
         img_name = os.path.basename(img_path)
+        HFinder_log.info(f"Processing {img_name}")
         base = os.path.splitext(img_name)[0]
         if img_name not in class_instructions:
             HFinder_log.warn(f"Skipping file {img_name} - no annotations")
@@ -400,14 +427,14 @@ def generate_training_dataset(folder_tree):
         # FIXME: handle z-stacks and time series.
         img = tifffile.imread(img_path)
         if not is_channel_first(img):
-            HFinder_log.warn(f"Skipping file {img_name} - not a multichannel image")
+            HFinder_log.warn(f"Skipping file {img_name}, wrong shape {img.shape}")
             continue
 
         # Resize image and split channels.
-        channels, ratio = resize_multichannel_image(img)   
+        channels, ratio, (n, c) = resize_multichannel_image(img)   
         
         # Retrieve polygons for each class and generate dataset.  
-        polygons_per_channel = prepare_class_inputs(folder_tree, base, channels, class_instructions[img_name], ratio)  
+        polygons_per_channel = prepare_class_inputs(folder_tree, base, channels, n, c, class_instructions[img_name], ratio)  
         generate_contours(folder_tree, base, polygons_per_channel, channels, class_ids)     
         generate_dataset(folder_tree, base, split_table[img_path], channels, polygons_per_channel)
 
