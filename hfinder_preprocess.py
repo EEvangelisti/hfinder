@@ -111,8 +111,14 @@ def channel_auto_threshold(channel):
 
 
 def channel_custom_threshold(channel, threshold):
+    thresh_val = 0.9
+    if threshold < 1:
+        thresh_val = np.percentile(channel, threshold)
+    else:
+        # is a pixel value
+        thresh_val = threshold
+
     w, h = HFinder_settings.get("target_size")
-    thresh_val = np.percentile(channel, threshold)
     _, binary = cv2.threshold(channel, thresh_val, 255, cv2.THRESH_BINARY)
     contours, _ = cv2.findContours(binary, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
     # Prepare list to store polygons in YOLO-style normalized coordinates
@@ -183,7 +189,7 @@ def prepare_class_inputs(folder_tree, base, channels, class_instructions, ratio)
 
         if "threshold" in instr:
             binary, polygons = channel_custom_threshold(channels[ch], instr["threshold"])
-            results[class_name].append((class_name, polygons))
+            results[ch].append((class_name, polygons))
             binary_output = os.path.join(folder_tree["root"], f"dataset/masks/{base}_{class_name}_mask.png")
             plt.imsave(binary_output, binary, cmap='gray')
 
