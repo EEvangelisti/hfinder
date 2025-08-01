@@ -11,3 +11,9 @@ The pipeline handles:
 - Integration of external annotations (e.g., from [Makesense AI](https://www.makesense.ai/)) with rescaling support.
 
 HFinder is intended for researchers studying plant–microbe interactions and host colonization dynamics, providing tools to accelerate the annotation and analysis of large image datasets.
+
+## Key Features
+- **Multi-channel TIFF support**: Automatically extracts, thresholds, or segments specific channels within multi-frame TIFFs. Each channel or z-slice can be treated independently or combined based on user-defined instructions.
+- **Flexible annotation workflow**: Supports both automatic segmentation (via thresholding) and custom annotations (via JSON polygons), enabling hybrid workflows.
+- **YOLOv8-compatible dataset generation**: Converts raw TIFF data into structured datasets (images, masks, metadata) for direct use in YOLOv8 training pipelines, including automatic generation of dataset.yaml.
+- **Class-aware image mapping**: Supports class-specific instructions, allowing different segmentation strategies per class or per image.
