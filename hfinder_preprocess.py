@@ -389,10 +389,10 @@ def resize_multichannel_image(img):
 
     target_size = HFinder_settings.get("target_size")
  
-    n = 1
     if img.ndim == 4:
         n, c, h, w = img.shape
     else:
+        n = 1 # not a stack or time series
         c, h, w = img.shape
     resized = np.empty((n * c, *target_size), dtype=img.dtype)
     for n_i in range(n):
