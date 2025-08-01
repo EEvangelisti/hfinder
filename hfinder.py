@@ -25,6 +25,9 @@ def main():
 
     # ---- Subcommand: check_masks ----
     parser_check = subparsers.add_parser("check", help="Generate and validate binary masks")
+    parser_check.add_argument("--mode", type=str,
+                              default=HFinder_settings.get("mode"),
+                              help="Run mode (normal or debug)")
     parser_check.set_defaults(func=generate_training_dataset)
 
     # ---- Subcommand: train ----

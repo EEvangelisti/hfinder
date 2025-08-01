@@ -361,7 +361,7 @@ def prepare_class_inputs(folder_tree, base, channels, n, c, class_instructions, 
 
 
 
-def is_channel_first(img):
+def is_valid_image_format(img):
     # Time series of z-stacks.
     if img.ndim == 4:
         _, c, h, w = img.shape
@@ -454,78 +454,138 @@ def generate_contours(folder_tree, base, polygons_per_channel, channels, class_i
 
 
 
-def generate_dataset(folder_tree, base, n, c, channels, polygons_per_channel):
-    def power_set(channels):
-        if n == 1:
-            s = list(channels)
-            return [combo for r in range(1, 4) for combo in combinations(s, r)]
-        
-        all_combos = []
-        for stack_index in range(n):
-            # Canaux de ce stack présents dans `channels`
-            group = [ch for ch in channels if (ch - 1) // c == stack_index]
-            for r in range(1, 4):
-                all_combos.extend(combinations(group, r))
-        return all_combos
-    def compose_hue_fusion(channels, selected_channels, palette, noise_channels=None):
-        """
-        Compose an RGB image by blending each selected channel with a random hue.
-        """
-        h, w = next(iter(channels.values())).shape
-        rgb = np.zeros((h, w, 3), dtype=np.float32)
+def power_set(channels, n, c):
+    if n == 1:
+        s = list(channels)
+        return [combo for r in range(1, 4) for combo in combinations(s, r)]
+    
+    all_combos = []
+    for stack_index in range(n):
+        # Canaux de ce stack présents dans `channels`
+        group = [ch for ch in channels if (ch - 1) // c == stack_index]
+        for r in range(1, 4):
+            all_combos.extend(combinations(group, r))
+    return all_combos
 
-        for ch in selected_channels:
+
+
+def compose_hue_fusion(channels, selected_channels, palette, noise_channels=None):
+    """
+    Compose an RGB image by blending each selected channel with a random hue.
+    """
+    h, w = next(iter(channels.values())).shape
+    rgb = np.zeros((h, w, 3), dtype=np.float32)
+
+    for ch in selected_channels:
+        frame = channels[ch]
+        hue = HFinder_palette.get_color(ch, palette=palette)[0] #np.random.rand()
+        colored = colorize_with_hue(frame, hue) 
+        rgb += colored  # additive mixing
+
+    # Ajout de bruit visuel contrôlé
+    if noise_channels:
+        for ch in noise_channels:
             frame = channels[ch]
             hue = HFinder_palette.get_color(ch, palette=palette)[0] #np.random.rand()
-            colored = colorize_with_hue(frame, hue) 
-            rgb += colored  # additive mixing
+            noise = colorize_with_hue(frame, hue)
+            rgb += 0.3 * noise 
 
-        # Ajout de bruit visuel contrôlé
-        if noise_channels:
-            for ch in noise_channels:
-                frame = channels[ch]
-                hue = HFinder_palette.get_color(ch, palette=palette)[0] #np.random.rand()
-                noise = colorize_with_hue(frame, hue)
-                rgb += noise  # Opacité réduite du bruit
+    # Clip to [0, 1] in case of saturation, then scale to [0, 255]
+    rgb = np.clip(rgb, 0, 1)
+    return (rgb * 255).astype(np.uint8)
 
-        # Clip to [0, 1] in case of saturation, then scale to [0, 255]
-        rgb = np.clip(rgb, 0, 1)
-        return (rgb * 255).astype(np.uint8)
 
-    def convert_polygon_to_yolo_segmentation(polygon):
-        return [coord for point in polygon for coord in point]
 
-    def make_filename(base, combo):
-        return f"{os.path.splitext(base)[0]}_" + "_".join(map(str, combo)) + ".jpg"
+def convert_polygon_to_yolo_segmentation(polygon):
+    """
+    Generates a filename by combining a base name and a list of values, 
+    typically used to uniquely identify frame/channel combinations.
 
-    def save_image_as_jpg(img_rgb, path):
-        Image.fromarray(img_rgb).save(path, "JPEG")
+    Parameters
+        base (str): The base name (usually the TIFF filename).
+        combo (list[int]): A list of integers (e.g., frame/channel indices).
 
-    def save_yolo_segmentation_label(file_path, polygons, class_ids, img_w, img_h):
-        with open(file_path, "w") as f:
-            for class_name, poly in polygons:
-                if class_name not in class_ids:
-                    continue
-                class_id = class_ids[class_name]
-                poly = convert_polygon_to_yolo_segmentation(poly)
-                line = [str(class_id)] + [f"{x:.6f}" for x in poly]
-                f.write(" ".join(line) + "\n")
+    Returns
+        str: A string filename ending with .jpg.
+    """
+    return [coord for point in polygon for coord in point]
 
-    img_dir = os.path.join(folder_tree["root"], "dataset", "images", "train")
-    lbl_dir = os.path.join(folder_tree["root"], "dataset", "labels", "train")
+
+
+def make_filename(base, combo):
+    """
+    Generates a filename by combining a base name and a list of values, 
+    typically used to uniquely identify frame/channel combinations.
+
+    Parameters
+        base (str): The base name (usually the TIFF filename).
+        combo (list[int]): A list of integers (e.g., frame/channel indices).
+
+    Returns
+        str: A string filename ending with .jpg.
+    """
+    return f"{os.path.splitext(base)[0]}_" + "_".join(map(str, combo)) + ".jpg"
+
+
+
+def save_image_as_jpg(img_rgb, path):
+    """
+    Generates a filename by combining a base name and a list of values, 
+    typically used to uniquely identify frame/channel combinations.
+
+    Parameters
+        base (str): The base name (usually the TIFF filename).
+        combo (list[int]): A list of integers (e.g., frame/channel indices).
+
+    Returns
+        str: A string filename ending with .jpg.
+    """
+    Image.fromarray(img_rgb).save(path, "JPEG")
+
+
+
+def save_yolo_segmentation_label(file_path, polygons, class_ids, img_w, img_h):
+    """
+    Writes YOLOv8-style segmentation labels to a .txt file, with one line per polygon, using normalized coordinates.
+
+    Parameters
+        file_path (str): Path to the output label file.
+        polygons (list[tuple[str, list[tuple[float, float]]]]): List of tuples (class_name, polygon).
+        class_ids (dict[str, int]): Mapping from class names to YOLO integer IDs.
+        img_w (int): Image width (unused here, but typically relevant for normalization).
+        img_h (int): Image height (unused here, same note as above).
+    """
+    with open(file_path, "w") as f:
+        for class_name, poly in polygons:
+            if class_name not in class_ids:
+                continue
+            class_id = class_ids[class_name]
+            poly = convert_polygon_to_yolo_segmentation(poly)
+            line = [str(class_id)] + [f"{x:.6f}" for x in poly]
+            f.write(" ".join(line) + "\n")
+
+
+
+def generate_dataset(folder_tree, base, n, c, channels, polygons_per_channel):
+    train_dir = os.path.join("dataset", "{}", "train")
+    img_dir = os.path.join(folder_tree["root"], train_dir.format("images"))
+    lbl_dir = os.path.join(folder_tree["root"], train_dir.format("labels"))
 
     # Chargement des identifiants de classes
-    class_ids = load_class_definitions()  # suppose définie ailleurs
+    class_ids = load_class_definitions()
     target_size = HFinder_settings.get("target_size")
     img_h, img_w = target_size
 
     annotated_channels = {ch for ch, polys in polygons_per_channel.items() if polys}
     all_channels = set(channels.keys())
 
-    #print(f"polygons_per_channel.keys() = {polygons_per_channel.keys()}, list(annotated_channels) = {list(annotated_channels)}")
-    for combo in power_set(annotated_channels):
+    if HFinder_settings.get("mode") == "debug":
+        print(f"polygons_per_channel.keys() = {polygons_per_channel.keys()}, \
+                list(annotated_channels) = {list(annotated_channels)}")
+
+    for combo in power_set(annotated_channels, n, c):
         filename = make_filename(base, combo)
-        noise_candidates = list(all_channels - set(combo))
+        noise_candidates = list(all_channels - set(annotated_channels) - set(combo))
         if n > 1:
         # Prendre le canal avec l'indice minimum pour déduire le niveau
             ref_ch = min(combo)
@@ -537,7 +597,11 @@ def generate_dataset(folder_tree, base, n, c, channels, polygons_per_channel):
             noise_channels = random.sample(noise_candidates, num_noise) if num_noise > 0 else []
         else:
             noise_channels = random.sample(noise_candidates, k=random.randint(1, len(noise_candidates)))
-        #print(f"Image {base}, combo = {combo}, noise_channels = {noise_channels}, noise_candidates = {noise_candidates}")
+
+        if HFinder_settings.get("mode") == "debug":
+            print(f"Image {base}, combo = {combo}, noise_channels = \
+                    {noise_channels}, noise_candidates = {noise_candidates}")
+
         special_palette = HFinder_palette.get_random_palette(colorspace="HSV", hash_data=filename)
         img_rgb = compose_hue_fusion(channels, combo, special_palette, noise_channels=noise_channels)
         img_path = os.path.join(img_dir, filename)
@@ -551,7 +615,7 @@ def generate_dataset(folder_tree, base, n, c, channels, polygons_per_channel):
 
 
 
-def split_train_val(folder_tree, percent=0.2):
+def split_train_val(folder_tree):
     """
     Splits the dataset into training and validation sets.
 
@@ -563,14 +627,15 @@ def split_train_val(folder_tree, percent=0.2):
     to the validation directory, along with their corresponding label files.
     """
     root = folder_tree["root"]
-    img_dir = os.path.join(root, "dataset", "images", "train")
-    lbl_dir = os.path.join(root, "dataset", "labels", "train")
-    img_val_dir = os.path.join(root, "dataset", "images", "val")
-    lbl_val_dir = os.path.join(root, "dataset", "labels", "val")
+    img_dir = os.path.join(root, HFinder_folders.get_image_train_dir())
+    lbl_dir = os.path.join(root, HFinder_folders.get_labels_train_dir())
+    img_val_dir = os.path.join(root, HFinder_folders.get_image_val_dir())
+    lbl_val_dir = os.path.join(root, HFinder_folders.get_labels_val_dir())
 
     image_paths = sorted(glob(os.path.join(img_dir, "*.jpg")))
     random.shuffle(image_paths)
 
+    percent = HFinder_settings.get("validation_frac")
     val_count = int(len(image_paths) * percent)
     val_images = image_paths[:val_count]
 
@@ -600,20 +665,17 @@ def generate_training_dataset(folder_tree):
     target_size = HFinder_settings.get("target_size")
 
     for img_path in image_paths:
-
-        # Check whether there is something to detect on the image.
-        # TODO: Maybe include these as noise-only images?
         img_name = os.path.basename(img_path)
         HFinder_log.info(f"Processing {img_name}")
         base = os.path.splitext(img_name)[0]
+        
+        # TODO: Should we include these as noise instead of discarding them?
         if img_name not in class_instructions:
             HFinder_log.warn(f"Skipping file {img_name} - no annotations")
-            continue  # skip images not listed
+            continue
 
-        # Ensure this is a proper TIFF file.
-        # FIXME: handle z-stacks and time series.
         img = tifffile.imread(img_path)
-        if not is_channel_first(img):
+        if not is_valid_image_format(img):
             HFinder_log.warn(f"Skipping file {img_name}, wrong shape {img.shape}")
             continue
 
@@ -621,7 +683,7 @@ def generate_training_dataset(folder_tree):
         channels, ratio, (n, c) = resize_multichannel_image(img)   
         
         # Retrieve polygons for each class and generate dataset.  
-        polygons_per_channel = prepare_class_inputs(folder_tree, base, channels, n, c, class_instructions[img_name], ratio)  
+        polygons_per_channel = prepare_class_inputs(folder_tree, base, channels, n, c, class_instructions[img_name], ratio)
         generate_contours(folder_tree, base, polygons_per_channel, channels, class_ids)     
         generate_dataset(folder_tree, base, n, c, channels, polygons_per_channel)
 

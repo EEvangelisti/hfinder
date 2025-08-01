@@ -182,3 +182,18 @@ def append_subtree(tree, path, value):
     elif not isinstance(current[final_key], list):
         raise TypeError(f"(HFinder) Cannot append to '{final_key}': not a list.")
     current[final_key].append(value)
+
+
+def get_image_train_dir():
+    return os.path.join("dataset", "images", "train")
+    
+def get_label_train_dir():
+    return os.path.join("dataset", "labels", "train")   
+
+def get_image_val_dir():
+    return os.path.join("dataset", "images", "val")
+
+def get_label_val_dir():
+    return os.path.join("dataset", "labels", "val")   
+
+     
