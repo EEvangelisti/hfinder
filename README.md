@@ -17,3 +17,22 @@ HFinder is intended for researchers studying plant–microbe interactions and ho
 - **Flexible annotation workflow**: Supports both automatic segmentation (via thresholding) and custom annotations (via JSON polygons), enabling hybrid workflows.
 - **YOLOv8-compatible dataset generation**: Converts raw TIFF data into structured datasets (images, masks, metadata) for direct use in YOLOv8 training pipelines, including automatic generation of dataset.yaml.
 - **Class-aware image mapping**: Supports class-specific instructions, allowing different segmentation strategies per class or per image.
+
+
+## Install
+
+It is recommended to install HFinder in a virtual environment as follows:
+
+```
+$ python3 -m venv hfinder
+$ source hfinder/bin/activate
+(hfinder) $ python -m pip install pyyaml ultralytics tifffile
+```
+
+You can then run it as follows:
+
+```
+(hfinder)$ python hfinder.py <action>
+```
+
+where action can be `check`, `train`, or `predict`.
