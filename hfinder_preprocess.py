@@ -567,14 +567,61 @@ def save_yolo_segmentation_label(file_path, polygons, class_ids, img_w, img_h):
 
 
 def generate_dataset(folder_tree, base, n, c, channels, polygons_per_channel):
+    """
+    Generates training data for YOLO-based segmentation by fusing image channels
+    into RGB composites and assigning segmentation masks based on annotated 
+    polygon data.
+
+    Parameters:
+        folder_tree (dict): A dictionary containing at least the "root" path to 
+        the dataset folder structure.
+        base (str): Base filename used to construct output image and label names.
+        n (int): Number of spatial/Z positions (frames) to combine per training example.
+        c (int): Number of channels per spatial position.
+        channels (dict[int → np.ndarray]): Dictionary mapping channel indices 
+        to grayscale image arrays.
+        polygons_per_channel (dict[int → list[tuple]]): Maps channel indices to 
+        lists of (class_name, polygon) tuples representing instance segmentations.
+
+    Functionality:
+        Iterates over all valid combinations (combo) of n spatial positions 
+        and c channels among annotated channels. For each combination:
+            - Excludes all annotated channels from the pool of possible "noise" 
+              channels (non-annotated distractors).
+            - Restricts possible noise channels to the same Z/t position as the 
+              combo if n > 1.
+            - Randomly adds zero or more noise channels to the input image.
+            - Composes a pseudo-RGB image using a hue-fusion strategy based on 
+              the combo and noise channels.
+            - Saves the resulting image as a .jpg file in the YOLO 
+              "train/images" folder.
+            - If polygons are available for any of the combo channels, it
+              generates and saves a YOLO-format .txt segmentation label.
+
+    Strict separation between annotated and noise channels ensures no meaningful
+    biological signal appears without its corresponding annotation — a crucial 
+    constraint to prevent inconsistencies during training. The approach supports
+    multiple Z/t frames per sample (via n > 1) and random noise injection for
+    data augmentation. Uses deterministic random color palettes (via hashing) 
+    for consistent hue fusion in debug or reproducibility scenarios.
+
+    Outputs:
+        JPEG images and corresponding YOLO segmentation labels, saved under:
+        dataset/images/train/
+        dataset/labels/train/
+
+    See Also:
+        power_set(): for generating valid channel combinations.
+        compose_hue_fusion(): for creating the RGB image from grayscale channels.
+        save_yolo_segmentation_label(): for saving labels in YOLO polygon format.
+        make_filename(): for deterministic filename generation from channel combos.
+    """
     train_dir = os.path.join("dataset", "{}", "train")
     img_dir = os.path.join(folder_tree["root"], train_dir.format("images"))
     lbl_dir = os.path.join(folder_tree["root"], train_dir.format("labels"))
 
-    # Chargement des identifiants de classes
     class_ids = load_class_definitions()
     target_size = HFinder_settings.get("target_size")
-    img_h, img_w = target_size
 
     annotated_channels = {ch for ch, polys in polygons_per_channel.items() if polys}
     all_channels = set(channels.keys())
@@ -585,31 +632,36 @@ def generate_dataset(folder_tree, base, n, c, channels, polygons_per_channel):
 
     for combo in power_set(annotated_channels, n, c):
         filename = make_filename(base, combo)
+        
+        # Any channel containing annotations must never be used as background 
+        # noise, even when not selected for the current input combination. This 
+        # avoids showing biologically meaningful signal without its associated 
+        # mask, which would create inconsistency during training.
         noise_candidates = list(all_channels - set(annotated_channels) - set(combo))
+
         if n > 1:
-        # Prendre le canal avec l'indice minimum pour déduire le niveau
+            # We can only select channels at the same Z/t level than combo.
             ref_ch = min(combo)
             series_index = (ref_ch - 1) // c
             allowed_noise = [series_index * c + i + 1 for i in range(c)]
             noise_candidates = list(set(noise_candidates) & set(allowed_noise))
-            # Échantillonnage aléatoire des canaux de bruit
-            num_noise = np.random.randint(0, len(noise_candidates) + 1)
-            noise_channels = random.sample(noise_candidates, num_noise) if num_noise > 0 else []
-        else:
-            noise_channels = random.sample(noise_candidates, k=random.randint(1, len(noise_candidates)))
+
+        num_noise = np.random.randint(0, len(noise_candidates) + 1)
+        noise_channels = random.sample(noise_candidates, num_noise) if num_noise > 0 else []
 
         if HFinder_settings.get("mode") == "debug":
-            print(f"Image {base}, combo = {combo}, noise_channels = \
-                    {noise_channels}, noise_candidates = {noise_candidates}")
+            print(f"Image {base}, combo = {combo}, \
+                    noise_channels = {noise_channels}, \
+                    noise_candidates = {noise_candidates}")
 
-        special_palette = HFinder_palette.get_random_palette(colorspace="HSV", hash_data=filename)
-        img_rgb = compose_hue_fusion(channels, combo, special_palette, noise_channels=noise_channels)
+        palette = HFinder_palette.get_random_palette(colorspace="HSV", hash_data=filename)
+        img_rgb = compose_hue_fusion(channels, combo, palette, noise_channels=noise_channels)
         img_path = os.path.join(img_dir, filename)
         save_image_as_jpg(img_rgb, img_path)
 
-        # Annotations combinées
         annotations = list(chain.from_iterable(polygons_per_channel.get(ch, []) for ch in combo))
         if annotations:
+            img_h, img_w = target_size
             label_path = os.path.join(lbl_dir, os.path.splitext(filename)[0] + ".txt")
             save_yolo_segmentation_label(label_path, annotations, class_ids, img_w, img_h)
 
