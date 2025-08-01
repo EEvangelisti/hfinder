@@ -544,16 +544,15 @@ def save_image_as_jpg(img_rgb, path):
 
 
 
-def save_yolo_segmentation_label(file_path, polygons, class_ids, img_w, img_h):
+def save_yolo_segmentation_label(file_path, polygons, class_ids):
     """
     Writes YOLOv8-style segmentation labels to a .txt file, with one line per polygon, using normalized coordinates.
 
-    Parameters
+    Parameters:
         file_path (str): Path to the output label file.
-        polygons (list[tuple[str, list[tuple[float, float]]]]): List of tuples (class_name, polygon).
+        polygons (list[tuple[str, list[tuple[float, float]]]]): List of tuples 
+        (class_name, polygon).
         class_ids (dict[str, int]): Mapping from class names to YOLO integer IDs.
-        img_w (int): Image width (unused here, but typically relevant for normalization).
-        img_h (int): Image height (unused here, same note as above).
     """
     with open(file_path, "w") as f:
         for class_name, poly in polygons:
@@ -661,9 +660,8 @@ def generate_dataset(folder_tree, base, n, c, channels, polygons_per_channel):
 
         annotations = list(chain.from_iterable(polygons_per_channel.get(ch, []) for ch in combo))
         if annotations:
-            img_h, img_w = target_size
             label_path = os.path.join(lbl_dir, os.path.splitext(filename)[0] + ".txt")
-            save_yolo_segmentation_label(label_path, annotations, class_ids, img_w, img_h)
+            save_yolo_segmentation_label(label_path, annotations, class_ids)
 
 
 
