@@ -359,9 +359,6 @@ def prepare_class_inputs(folder_tree, base, channels, n, c, class_instructions, 
     return results
 
 
-def is_stack(img):
-    return img.ndim == 4
-
 
 def is_channel_first(img):
     # Time series of z-stacks.
@@ -393,7 +390,7 @@ def resize_multichannel_image(img):
     target_size = HFinder_settings.get("target_size")
  
     n = 1
-    if is_stack(img):
+    if img.ndim == 4:
         n, c, h, w = img.shape
     else:
         c, h, w = img.shape
