@@ -1,3 +1,12 @@
+"""
+hfinder_train — Utilities for training YOLO models and managing log redirection
+
+This module provides helper functions to train YOLO models using Ultralytics' API,
+while ensuring all standard output and error streams are redirected to a log file.
+It also handles restoration of original outputs after training. It depends on 
+external modules that manage folder structures, settings, and logging behavior.
+"""
+
 import os
 import sys
 import yaml
@@ -10,8 +19,15 @@ import hfinder_settings as HFinder_settings
 
 def redirect_all_output(log_path):
     """
-    Redirects all output (stdout and stderr) to a log file using low-level file descriptors.
-    Returns a tuple of (original_stdout_fd, original_stderr_fd) for later restoration.
+    Redirects both stdout and stderr to a specified log file.
+
+    Parameters:
+        log_path (str): Path to the log file where output will be written.
+
+    Returns:
+        tuple: A pair of file descriptors (stdout_fd, stderr_fd) representing
+               the original stdout and stderr. These must be passed to 
+               `restore_output` to revert redirection.
     """
     sys.stdout.flush()
     sys.stderr.flush()
@@ -33,7 +49,15 @@ def redirect_all_output(log_path):
 
 def restore_output(stdout_fd, stderr_fd):
     """
-    Restores the original stdout and stderr using saved file descriptors.
+    Restores stdout and stderr to their original state.
+
+    Parameters:
+        stdout_fd (int): File descriptor of the original stdout.
+        stderr_fd (int): File descriptor of the original stderr.
+
+    Note:
+        This function should be called after `redirect_all_output` to revert 
+        to normal terminal output.
     """
     sys.stdout.flush()
     sys.stderr.flush()
@@ -46,13 +70,18 @@ def restore_output(stdout_fd, stderr_fd):
 
 def train_yolo_model(folder_tree, **kwargs):
     """
-    Train a YOLOv8 model using Ultralytics CLI.
+    Trains a YOLOv8 model using the Ultralytics API and project-specific settings.
 
-    Args:
-        data_yaml_path (str): Path to the dataset YAML file.
-        model (str): Base model to fine-tune (e.g., "yolov8n.pt", "yolov8s.pt").
-        epochs (int): Number of training epochs.
-        imgsz (int): Input image size (default: 640).
+    This function:
+    - Retrieves the YOLO model path and training parameters from HFinder_settings.
+    - Builds the appropriate dataset and output paths.
+    - Redirects all output (stdout and stderr) to a log file.
+    - Trains the model using `YOLO.train()`.
+    - Restores original output streams at the end.
+
+    Parameters:
+        folder_tree (dict): A dictionary representing the project folder hierarchy.
+        **kwargs: Additional keyword arguments passed to `YOLO.train()`.
     """
 
     model = HFinder_settings.get("model")
@@ -76,11 +105,4 @@ def train_yolo_model(folder_tree, **kwargs):
                    **kwargs)
     finally:
         restore_output(stdout_fd, stderr_fd)
-
-
-
-
-
-
-
 
