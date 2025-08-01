@@ -15,6 +15,7 @@ from numpy import stack, uint8
 from matplotlib.colors import hsv_to_rgb
 import hfinder_log as HFinder_log
 import hfinder_folders as HFinder_folders
+import hfinder_palette as HFinder_palette
 import hfinder_settings as HFinder_settings
 
 
@@ -293,18 +294,6 @@ def generate_contours(folder_tree, base, polygons_per_channel, channels, class_i
     root = folder_tree["root"]
     contour_dir = os.path.join(root, "dataset", "contours")
 
-    # Palette simple de couleurs distinctes
-    palette = [
-        (255, 0, 255),   # magenta
-        (0, 255, 255),   # jaune clair
-        (0, 255, 0),     # vert
-        (255, 0, 0),     # bleu
-        (0, 128, 255),   # orange
-        (128, 0, 255),   # violet
-        (255, 255, 0),   # cyan
-        (255, 128, 0),   # corail
-    ]
-
     for ch_name, polygons in polygons_per_channel.items():
         img = channels[ch_name]
         h, w = img.shape
@@ -314,7 +303,7 @@ def generate_contours(folder_tree, base, polygons_per_channel, channels, class_i
             if class_name not in class_ids:
                 continue
             class_id = class_ids[class_name]
-            color = palette[class_id % len(palette)]
+            color = HFinder_palette.get_color(class_id)
 
             for poly in poly:  # liste de polygones
                 # poly est une liste plate : [x1, y1, x2, y2, ..., xn, yn]
@@ -346,7 +335,7 @@ def generate_dataset(folder_tree, base, n, c, split_flag, channels, polygons_per
             for r in range(1, 4):
                 all_combos.extend(combinations(group, r))
         return all_combos
-    def compose_hue_fusion(channels, selected_channels, noise_channels=None):
+    def compose_hue_fusion(channels, selected_channels, palette, noise_channels=None):
         """
         Compose an RGB image by blending each selected channel with a random hue.
         """
@@ -355,15 +344,15 @@ def generate_dataset(folder_tree, base, n, c, split_flag, channels, polygons_per
 
         for ch in selected_channels:
             frame = channels[ch]
-            hue = np.random.rand()  # [0, 1)
-            colored = colorize_with_hue(frame, hue)
+            hue = HFinder_palette.get_color(ch, palette=palette)[0] #np.random.rand()
+            colored = colorize_with_hue(frame, hue) 
             rgb += colored  # additive mixing
 
         # Ajout de bruit visuel contrôlé
         if noise_channels:
             for ch in noise_channels:
                 frame = channels[ch]
-                hue = np.random.rand()
+                hue = HFinder_palette.get_color(ch, palette=palette)[0] #np.random.rand()
                 noise = colorize_with_hue(frame, hue)
                 rgb += noise  # Opacité réduite du bruit
 
@@ -403,7 +392,7 @@ def generate_dataset(folder_tree, base, n, c, split_flag, channels, polygons_per
     annotated_channels = {ch for ch, polys in polygons_per_channel.items() if polys}
     all_channels = set(channels.keys())
 
-    print(f"polygons_per_channel.keys() = {polygons_per_channel.keys()}, list(annotated_channels) = {list(annotated_channels)}")
+    #print(f"polygons_per_channel.keys() = {polygons_per_channel.keys()}, list(annotated_channels) = {list(annotated_channels)}")
     for combo in power_set(annotated_channels):
         filename = make_filename(base, combo)
         noise_candidates = list(all_channels - set(combo))
@@ -418,8 +407,9 @@ def generate_dataset(folder_tree, base, n, c, split_flag, channels, polygons_per
             noise_channels = random.sample(noise_candidates, num_noise) if num_noise > 0 else []
         else:
             noise_channels = random.sample(noise_candidates, k=random.randint(1, len(noise_candidates)))
-        print(f"Image {base}, combo = {combo}, noise_channels = {noise_channels}, noise_candidates = {noise_candidates}")
-        img_rgb = compose_hue_fusion(channels, combo, noise_channels=noise_channels)
+        #print(f"Image {base}, combo = {combo}, noise_channels = {noise_channels}, noise_candidates = {noise_candidates}")
+        special_palette = HFinder_palette.get_random_palette(colorspace="HSV", hash_data=filename)
+        img_rgb = compose_hue_fusion(channels, combo, special_palette, noise_channels=noise_channels)
         img_path = os.path.join(img_dir, filename)
         save_image_as_jpg(img_rgb, img_path)
 
