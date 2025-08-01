@@ -3,6 +3,7 @@ import cv2
 import json
 import yaml
 import random
+import shutil
 import tifffile
 import numpy as np
 import matplotlib.pyplot as plt
@@ -407,15 +408,6 @@ def resize_multichannel_image(img):
 
 
 
-def split_train_val(image_paths, train_ratio=0.8, seed=42):
-    image_paths = image_paths.copy()
-    random.Random(seed).shuffle(image_paths)
-    n_train = int(len(image_paths) * train_ratio)
-    return dict([(path, True)  for path in image_paths[:n_train]] + \
-                [(path, False) for path in image_paths[n_train:]])
-
-
-
 def colorize_with_hue(frame, hue):
     norm = frame.astype(np.float32)
     norm /= norm.max() if norm.max() > 0 else 1
@@ -462,7 +454,7 @@ def generate_contours(folder_tree, base, polygons_per_channel, channels, class_i
 
 
 
-def generate_dataset(folder_tree, base, n, c, split_flag, channels, polygons_per_channel):
+def generate_dataset(folder_tree, base, n, c, channels, polygons_per_channel):
     def power_set(channels):
         if n == 1:
             s = list(channels)
@@ -519,10 +511,8 @@ def generate_dataset(folder_tree, base, n, c, split_flag, channels, polygons_per
                 line = [str(class_id)] + [f"{x:.6f}" for x in poly]
                 f.write(" ".join(line) + "\n")
 
-    # Détermination du sous-dossier (train/val)
-    split = "train" if split_flag else "val"
-    img_dir = os.path.join(folder_tree["root"], "dataset", "images", split)
-    lbl_dir = os.path.join(folder_tree["root"], "dataset", "labels", split)
+    img_dir = os.path.join(folder_tree["root"], "dataset", "images", "train")
+    lbl_dir = os.path.join(folder_tree["root"], "dataset", "labels", "train")
 
     # Chargement des identifiants de classes
     class_ids = load_class_definitions()  # suppose définie ailleurs
@@ -561,12 +551,47 @@ def generate_dataset(folder_tree, base, n, c, split_flag, channels, polygons_per
 
 
 
+def split_train_val(folder_tree, percent=0.2):
+    """
+    Splits the dataset into training and validation sets.
+
+    Parameters:
+        folder_tree (dict): Dictionary containing the root path of the dataset structure.
+        percent (float): Proportion of images to keep in the training set (default is 0.8).
+
+    This function moves (1 - percent) of the images from the training directory
+    to the validation directory, along with their corresponding label files.
+    """
+    root = folder_tree["root"]
+    img_dir = os.path.join(root, "dataset", "images", "train")
+    lbl_dir = os.path.join(root, "dataset", "labels", "train")
+    img_val_dir = os.path.join(root, "dataset", "images", "val")
+    lbl_val_dir = os.path.join(root, "dataset", "labels", "val")
+
+    image_paths = sorted(glob(os.path.join(img_dir, "*.jpg")))
+    random.shuffle(image_paths)
+
+    val_count = int(len(image_paths) * percent)
+    val_images = image_paths[:val_count]
+
+    for img_path in val_images:
+        img_name = os.path.basename(img_path)
+        label_name = os.path.splitext(img_name)[0] + ".txt"
+
+        src_lbl_path = os.path.join(lbl_dir, label_name)
+        dst_img_path = os.path.join(img_val_dir, img_name)
+        dst_lbl_path = os.path.join(lbl_val_dir, label_name)
+
+        shutil.move(img_path, dst_img_path)
+        shutil.move(src_lbl_path, dst_lbl_path)
+
+
+
 def generate_training_dataset(folder_tree):
 
     # Retrieve images and assign to training or validation subsets
     data_dir = HFinder_settings.get("tiff_dir")
     image_paths = sorted(glob(os.path.join(data_dir, "*.tif")))
-    split_table = split_train_val(image_paths)
     
     # Loads classes and preprocessing instructions.
     class_ids = load_class_definitions()
@@ -598,5 +623,6 @@ def generate_training_dataset(folder_tree):
         # Retrieve polygons for each class and generate dataset.  
         polygons_per_channel = prepare_class_inputs(folder_tree, base, channels, n, c, class_instructions[img_name], ratio)  
         generate_contours(folder_tree, base, polygons_per_channel, channels, class_ids)     
-        generate_dataset(folder_tree, base, n, c, split_table[img_path], channels, polygons_per_channel)
+        generate_dataset(folder_tree, base, n, c, channels, polygons_per_channel)
 
+    split_train_val(folder_tree)
