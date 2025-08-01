@@ -628,9 +628,9 @@ def split_train_val(folder_tree):
     """
     root = folder_tree["root"]
     img_dir = os.path.join(root, HFinder_folders.get_image_train_dir())
-    lbl_dir = os.path.join(root, HFinder_folders.get_labels_train_dir())
+    lbl_dir = os.path.join(root, HFinder_folders.get_label_train_dir())
     img_val_dir = os.path.join(root, HFinder_folders.get_image_val_dir())
-    lbl_val_dir = os.path.join(root, HFinder_folders.get_labels_val_dir())
+    lbl_val_dir = os.path.join(root, HFinder_folders.get_label_val_dir())
 
     image_paths = sorted(glob(os.path.join(img_dir, "*.jpg")))
     random.shuffle(image_paths)
