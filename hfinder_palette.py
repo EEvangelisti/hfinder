@@ -10,16 +10,17 @@ import hashlib
 import colorsys
 import hfinder_log as HFinder_log
 
-base_palette_rgb = [
-    (255, 0, 255),   # magenta
-    (0, 255, 255),   # yellow
-    (0, 255, 0),     # green
-    (255, 0, 0),     # blue
-    (0, 128, 255),   # orange
-    (128, 0, 255),   # violet
-    (255, 255, 0),   # cyan
-    (255, 128, 0),   # coral
-]
+def hex_to_rgb(hex_color):
+    return tuple(int(hex_color[i:i+2], 16) for i in (1, 3, 5))
+
+base_palette_rgb = [hex_to_rgb(x) for x in [
+    "#8931EF", # Blue-Violet
+    "#F2CA19", # Jonquil
+    "#FF00BD", # Shocking Pink
+    "#0057E9", # RYB Blue
+    "#87E911", # Alien Armpit
+    "#E11845"  # Spanish Crimson
+]]
 
 base_palette_hsv = [colorsys.rgb_to_hsv(r/255, g/255, b/255) for r, g, b in base_palette_rgb]
 
