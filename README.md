@@ -19,20 +19,31 @@ HFinder is intended for researchers studying plant–microbe interactions and ho
 - **Class-aware image mapping**: Supports class-specific instructions, allowing different segmentation strategies per class or per image.
 
 
-## Install
+## Installation
 
-It is recommended to install HFinder in a virtual environment as follows:
+### Dependencies
+To run HFinder, you need to install the following dependencies:
+- The YAML library [pyyaml](https://pypi.org/project/PyYAML/)
+- The Python YOLO interface [ultralytics]{https://docs.ultralytics.com/fr/quickstart/}
+- The TIFF library [tifffile](https://pypi.org/project/tifffile/) 
+It is recommended to use a virtual environment.
+```
+pip install pyyaml ultralytics tifffile
+```
+
+### Running
+You can then run HFinder as follows:
 
 ```
-$ python3 -m venv hfinder
-$ source hfinder/bin/activate
-(hfinder) $ python -m pip install pyyaml ultralytics tifffile
-```
-
-You can then run it as follows:
-
-```
-(hfinder)$ python hfinder.py <action>
+$ python hfinder.py <action>
 ```
 
 where action can be `check`, `train`, or `predict`.
+
+## Training mode
+
+(...)
+
+## Prediction mode
+
+(...)
