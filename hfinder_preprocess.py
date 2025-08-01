@@ -38,6 +38,32 @@ def load_class_definitions():
 
 
 def write_yolo_yaml(class_ids, folder_tree):
+    """
+    Generate and save a YOLO-compatible dataset YAML file.
+
+    This function creates a `dataset.yaml` file describing the training and validation
+    dataset structure for YOLOv8, including class names, number of classes, and paths
+    to training/validation images. The file is written to `dataset/dataset.yaml`
+    within the project's root directory.
+
+    Parameters:
+        class_ids (dict): A dictionary mapping class names (str) to class indices (int).
+                          Example: {"cell": 0, "noise": 1}
+        folder_tree (dict): A dictionary representing folder paths used in the project.
+                            Must include the key "root" with the path to the root directory.
+
+    Side effects:
+        - Writes a `dataset.yaml` file to the dataset directory.
+        - Updates `folder_tree` with a new key `"dataset/yaml"` pointing to the YAML path.
+
+    Output YAML format:
+        path: <root directory>
+        train: <path to training images>
+        val: <path to validation images>
+        nc: <number of classes>
+        names: <list of class names ordered by index>
+    """
+
     root = folder_tree["root"]
     train_dir = os.path.join(root, "dataset", "images", "train")
     val_dir = os.path.join(root, "dataset", "images", "val")
@@ -60,10 +86,44 @@ def write_yolo_yaml(class_ids, folder_tree):
 
 def load_image_class_mappings():
     """
-    Create a mapping: image → class → extraction instructions.
+    Load and consolidate image-to-class channel mappings from JSON annotation files.
+
+    This function reads all JSON files in the `classes/` subdirectory of the 
+    TIFF data directory (as specified in the HFinder settings). Each file must 
+    be named after a class and contain a mapping from image filenames to either:
+      - an integer (representing the channel for that class in the image), or
+      - a dictionary containing at least the key `"channel"`.
+
+    The function first builds per-class mappings, then merges them into a 
+    unified image-wise map where, for each image, every class is listed with 
+    its associated channel mapping or `-1` if absent.
 
     Returns:
-        dict: image filename → {class_name: {"channel":..., "segment":...} or -1}
+        dict: A nested dictionary of the form:
+              {
+                  "image_name_1": {
+                      "class_A": {"channel": X},
+                      "class_B": -1,
+                      ...
+                  },
+                  ...
+              }
+
+    Raises:
+        - Logs a fatal error and exits if:
+          - The `classes/` directory does not exist.
+          - Any annotation is malformed (missing `"channel"` key or incorrect format).
+
+    Dependencies:
+        - Uses `HFinder_settings.get("tiff_dir")` to locate the base data directory.
+        - Expects each class to be represented by a single JSON file in `classes/`.
+        - Logs errors via `HFinder_log.fail`.
+
+    Example expected input format (inside a JSON file named `classA.json`):
+        {
+            "image001": 4,
+            "image002": {"channel": 5}
+        }
     """
     class_dir = os.path.join(HFinder_settings.get("tiff_dir"), "classes")
     if not os.path.isdir(class_dir):
@@ -105,13 +165,33 @@ def load_image_class_mappings():
 
 
 
-def channel_auto_threshold(channel):
-    auto_threshold = HFinder_settings.get("default_auto_threshold")
-    return channel_custom_threshold(channel, auto_threshold)
-
-
-
 def channel_custom_threshold(channel, threshold):
+    """
+    Apply custom thresholding to a single-channel image and extract YOLO-style 
+    polygon annotations.
+
+    This function performs binary thresholding followed by contour detection to 
+    identify regions of interest in an image channel. It converts each contour 
+    to a flattened polygon in YOLO-normalized coordinates (relative to the 
+    target image size).
+
+    Args:
+        channel (np.ndarray): 2D NumPy array representing a single grayscale image channel.
+        threshold (float): 
+            - If < 1, interpreted as a percentile (e.g., 0.9 for the top 10% brightest pixels).
+            - If ≥ 1, interpreted as an absolute pixel intensity threshold (0–255).
+
+    Returns:
+        tuple:
+            - binary (np.ndarray): Binary thresholded image.
+            - yolo_polygons (List[List[float]]): List of polygons where each polygon is a flattened list 
+              [x1, y1, x2, y2, ..., xn, yn] in YOLO format (normalized to [0,1]).
+
+    Notes:
+        - The image size is taken from `HFinder_settings.get("target_size")`.
+        - Only external contours are retained.
+        - Contours with fewer than 3 points are discarded.
+    """
     thresh_val = 0.9
     if threshold < 1:
         thresh_val = np.percentile(channel, threshold)
@@ -140,7 +220,53 @@ def channel_custom_threshold(channel, threshold):
 
 
 
+def channel_auto_threshold(channel):
+    """
+    Apply automatic thresholding to a single-channel image to extract binary 
+    masks and YOLO-style polygons.
+
+    This is a wrapper around `channel_custom_threshold`, using the default threshold
+    value defined in settings (in percent).
+
+    Args:
+        channel (np.ndarray): 2D NumPy array representing a single image channel.
+
+    Returns:
+        tuple:
+            - binary (np.ndarray): Binary image resulting from thresholding.
+            - yolo_polygons (List[List[float]]): List of flattened polygons, each representing
+              a detected object in YOLO-normalized coordinates.
+    """
+    auto_threshold = HFinder_settings.get("default_auto_threshold")
+    return channel_custom_threshold(channel, auto_threshold)
+
+
+
 def channel_custom_segment(json_path, ratio):
+    """
+    Load and normalize segmentation polygons from a COCO-style JSON annotation file.
+
+    This function reads segmentation annotations from a JSON file and rescales 
+    the coordinates to match the normalized YOLO format, according to a given 
+    `ratio` and the target image size defined in settings.
+
+    Args:
+        json_path (str): Path to the JSON file containing COCO-style annotations.
+        ratio (float): Scaling ratio between original image dimensions and the 
+                       target size. Used to rescale polygon coordinates.
+
+    Returns:
+        List[List[float]]: A list of flattened polygons, where each polygon is represented 
+        as a list of alternating x and y coordinates (normalized to [0,1]).
+
+    Notes:
+        - Only valid segmentation entries are processed.
+        - Segments with missing or malformed data (e.g., odd number of coordinates) are skipped.
+        - Coordinate normalization assumes the original segmentation is in absolute pixels
+          and applies:  
+              `x_new = x * ratio / width`,  
+              `y_new = y * ratio / height`.
+    """
     with open(json_path, "r") as f:
         data = json.load(f)
 
@@ -156,8 +282,6 @@ def channel_custom_segment(json_path, ratio):
                 HFinder_log.warn(f"Invalid segmentation in {json_path}, annotation id {ann.get('id')}")
                 continue
 
-            # seg est une liste plate : [x0, y0, x1, y1, ...]
-            # On la normalise directement
             flat = [seg[i] * ratio / w if i % 2 == 0 else seg[i] * ratio / h for i in range(len(seg))]
             polygons.append(flat)
 
@@ -167,18 +291,35 @@ def channel_custom_segment(json_path, ratio):
 
 def prepare_class_inputs(folder_tree, base, channels, n, c, class_instructions, ratio):
     """
-    Prepares class-specific inputs for a given image based on user-defined instructions.
+    Generate segmentation masks and polygon annotations per class, for each 
+    frame or image channel. This function applies either:
+      - custom pixel thresholding,
+      - automatic thresholding,
+      - or loads segmentation polygons from a JSON file (COCO-style),
+    depending on the user-defined `class_instructions` for each semantic class.
 
     Args:
-        image_path (str): Path to the original image (e.g., TIFF).
-        class_instructions (dict): Dictionary mapping class names to processing instructions.
-            The instruction can be:
-                - an integer → auto-thresholding on that channel
-                - a dict with a "threshold" → custom thresholding
-                - a dict with a "segment" → use manual segmentation mask (COCO JSON)
+        folder_tree (dict): Dictionary representing the project folder structure.
+                            Must include a "root" key pointing to the root directory.
+        base (str): Base name for output files.
+        channels (List[np.ndarray]): List of image channels, usually from a TIFF stack.
+        n (int): Number of Z-stack frames (or images).
+        c (int): Number of channels per frame.
+        class_instructions (dict): Mapping of class names to processing instructions. Each value is either:
+            - -1 (ignored class),
+            - dict with "channel" and optional "threshold" (float or pixel value),
+            - dict with "channel" and "segment" (path to JSON file).
+        ratio (float): Scaling factor used to normalize coordinates when loading polygons from segmentation.
 
     Returns:
-        dict: Mapping from class name to result of corresponding processing function.
+        defaultdict[list]: A mapping from frame indices to lists of (class_name, polygons),
+                           where each polygon is a flattened list of normalized coordinates.
+
+    Notes:
+        - Thresholding is applied using OpenCV to generate binary masks and extract contours.
+        - Resulting masks are saved as PNG files under `dataset/masks/`, named per class and frame.
+        - If `"segment"` is used, polygons are extracted from a JSON file and scaled accordingly.
+        - JSON segmentations are not supported for Z-stacks (`n > 1`); this raises a failure.
     """
     results = defaultdict(list)
 
@@ -193,7 +334,8 @@ def prepare_class_inputs(folder_tree, base, channels, n, c, class_instructions, 
                 frame = i * c + ch
                 binary, polygons = channel_custom_threshold(channels[frame], instr["threshold"])
                 results[frame].append((class_name, polygons))
-                name = f"dataset/masks/{base}_{class_name}_mask.png" if n == 1 else f"dataset/masks/{base}_frame{frame}_{class_name}_mask.png"
+                name = f"dataset/masks/{base}_{class_name}_mask.png" if n == 1 \
+                       else f"dataset/masks/{base}_frame{frame}_{class_name}_mask.png"
                 binary_output = os.path.join(folder_tree["root"], name)
                 plt.imsave(binary_output, binary, cmap='gray')
 
@@ -209,7 +351,8 @@ def prepare_class_inputs(folder_tree, base, channels, n, c, class_instructions, 
                 frame = i * c + ch
                 binary, polygons = channel_auto_threshold(channels[frame])
                 results[frame].append((class_name, polygons))
-                name = f"dataset/masks/{base}_{class_name}_mask.png" if n == 1 else f"dataset/masks/{base}_frame{frame}_{class_name}_mask.png"
+                name = f"dataset/masks/{base}_{class_name}_mask.png" if n == 1 \
+                       else f"dataset/masks/{base}_frame{frame}_{class_name}_mask.png"
                 binary_output = os.path.join(folder_tree["root"], name)
                 plt.imsave(binary_output, binary, cmap='gray')
 
