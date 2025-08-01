@@ -12,13 +12,14 @@ import hfinder_log as HFinder_log
 
 base_palette_rgb = [
     (255, 0, 255),   # magenta
-    (0, 255, 255),   # jaune clair
-    (0, 255, 0),     # vert
-    (255, 0, 0),     # bleu
+    (0, 255, 255),   # yellow
+    (0, 255, 0),     # green
+    (128, 128, 128), # grey
+    (255, 0, 0),     # blue
     (0, 128, 255),   # orange
     (128, 0, 255),   # violet
     (255, 255, 0),   # cyan
-    (255, 128, 0),   # corail
+    (255, 128, 0),   # coral
 ]
 
 base_palette_hsv = [colorsys.rgb_to_hsv(r/255, g/255, b/255) for r, g, b in base_palette_rgb]

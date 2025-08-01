@@ -1,7 +1,6 @@
 import argparse
 import hfinder_log as HFinder_log
 import hfinder_train as HFinder_train
-import hfinder_hyphae as HFinder_hyphae
 import hfinder_folders as HFinder_folders
 import hfinder_settings as HFinder_settings
 import hfinder_preprocess as HFinder_preprocess
