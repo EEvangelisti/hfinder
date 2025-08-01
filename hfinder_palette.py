@@ -14,7 +14,6 @@ base_palette_rgb = [
     (255, 0, 255),   # magenta
     (0, 255, 255),   # yellow
     (0, 255, 0),     # green
-    (128, 128, 128), # grey
     (255, 0, 0),     # blue
     (0, 128, 255),   # orange
     (128, 0, 255),   # violet
