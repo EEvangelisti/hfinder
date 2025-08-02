@@ -166,6 +166,38 @@ def load_image_class_mappings():
 
 
 
+def auto_threshold_strategy(img, threshold):
+    """
+    Automatically selects the best thresholding method (OTSU or Triangle) 
+    depending on whether the signal is minority or not.
+    
+    Parameters:
+        img (np.ndarray): Grayscale image (uint8).
+        threshold (str): thresholding function (auto, otsu, triangle).
+    
+    Returns:
+        binary_mask (np.ndarray): Binary image after thresholding.
+    """
+    assert img.dtype == np.uint8, "Input image must be uint8"
+    
+    if threshold == "otsu":
+        flag = cv2.THRESH_OTSU
+    elif threshold == "triangle":
+        flag = cv2.THRESH_TRIANGLE
+    elif threshold == "auto":
+        median_val = np.median(img)
+        mean_val = np.mean(img)
+        max_val = np.max(img)
+        # Heuristic: minority signal often implies strong skew (median << mean)
+        skew_ratio = (mean_val - median_val) / (max_val + 1e-5)
+        flag = cv2.THRESH_TRIANGLE if skew_ratio > 0.15 else cv2.THRESH_OTSU
+    else:
+        HFinder_log.fail(f"Unknown thresholding function '{threshold}'")
+    
+    return cv2.threshold(img, 0, 255, cv2.THRESH_BINARY + flag)
+
+
+
 def channel_custom_threshold(channel, threshold):
     """
     Apply custom thresholding to a single-channel image and extract YOLO-style 
@@ -193,15 +225,13 @@ def channel_custom_threshold(channel, threshold):
         - Only external contours are retained.
         - Contours with fewer than 3 points are discarded.
     """
-    thresh_val = 0.9
-    if threshold < 1:
-        thresh_val = np.percentile(channel, threshold)
+    if isinstance(threshold, str):
+        _, binary = auto_threshold_strategy(channel, threshold.lower())
     else:
-        # is a pixel value
-        thresh_val = threshold
+        thresh_val = threshold if threshold >= 1 else np.percentile(channel, threshold)
+        _, binary = cv2.threshold(channel, thresh_val, 255, cv2.THRESH_BINARY)
 
     w, h = HFinder_settings.get("target_size")
-    _, binary = cv2.threshold(channel, thresh_val, 255, cv2.THRESH_BINARY)
     contours, _ = cv2.findContours(binary, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
     # Prepare list to store polygons in YOLO-style normalized coordinates
     yolo_polygons = []

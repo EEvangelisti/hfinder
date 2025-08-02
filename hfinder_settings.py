@@ -13,7 +13,7 @@ Default configuration:
 
 SETTINGS = {
     "tiff_dir": "data",
-    "default_auto_threshold": 90,
+    "default_auto_threshold": "auto",
     "target_size" : (640, 640),
     "epochs": 100,
     "model": "yolov8n-seg.pt",
