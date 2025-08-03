@@ -10,19 +10,23 @@ import hashlib
 import colorsys
 import hfinder_log as HFinder_log
 
-def hex_to_rgb(hex_color):
-    return tuple(int(hex_color[i:i+2], 16) for i in (1, 3, 5))
+base_palette_hsv = []
+base_palette_rgb = []
 
-base_palette_rgb = [hex_to_rgb(x) for x in [
-    "#8931EF", # Blue-Violet
-    "#F2CA19", # Jonquil
-    "#FF00BD", # Shocking Pink
-    "#0057E9", # RYB Blue
-    "#87E911", # Alien Armpit
-    "#E11845"  # Spanish Crimson
-]]
+N = 6
+start_hex="#FF0000"
+# Convert hex to RGB in [0,1]
+start_rgb = tuple(int(start_hex[i:i+2], 16)/255 for i in (1, 3, 5))
+start_hsv = colorsys.rgb_to_hsv(*start_rgb)
 
-base_palette_hsv = [colorsys.rgb_to_hsv(r/255, g/255, b/255) for r, g, b in base_palette_rgb]
+# Generate N hues by spacing hue evenly around the circle
+for i in range(N):
+    h = (start_hsv[0] + i / N) % 1.0  # hue ∈ [0,1]
+    s = start_hsv[1]
+    v = start_hsv[2]
+    base_palette_hsv.append((h, s, v))
+    rgb = colorsys.hsv_to_rgb(h, s, v)
+    base_palette_rgb.append(rgb)
 
 
 
