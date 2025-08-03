@@ -13,9 +13,11 @@ SETTINGS = {}
 with open("settings.json", "r") as f:
     SETTINGS = json.load(f)
 
-for key in SETTINGS.keys():
+keys = list(SETTINGS.keys())
+for key in keys:
     elt = SETTINGS[key]
     elt["type"] = locate(elt["type"])
+    SETTINGS[elt["long"]] = key
     if elt["type"] is tuple:
         elt["default"] = ast.literal_eval(elt["default"])
     else:
@@ -65,7 +67,8 @@ def define_arguments(parser, mode):
             - a human-readable help string including the default
     """
     subset = {x: SETTINGS[x] for x in SETTINGS.keys() 
-              if compatible_modes(SETTINGS[x]["mode"], mode)}
+              if not isinstance(SETTINGS[x], str) and \
+              compatible_modes(SETTINGS[x]["mode"], mode)}
 
     for cmd in subset.keys():
         parser.add_argument(f"-{cmd}", f"--{SETTINGS[cmd]['long']}",
@@ -88,9 +91,25 @@ def load(args):
     """
     global SETTINGS
     user_defined = vars(args)
-    for key in user_defined.keys():
-        if type(user_defined[key]) == SETTINGS[key]["type"]:
-            SETTINGS[key]["default"] = user_defined[key]
+
+    for key, val in user_defined.items():
+        if key in SETTINGS:
+            expected_type = SETTINGS[key]["type"]
+            
+            if isinstance(val, str) and expected_type in (tuple, list):
+                try:
+                    val = ast.literal_eval(val)
+                except Exception:
+                    raise ValueError(f"Could not parse {val} as {expected_type}")
+            
+            # Forcer la conversion si ce n’est pas le bon type
+            if not isinstance(val, expected_type):
+                try:
+                    val = expected_type(val)
+                except Exception:
+                    raise ValueError(f"Could not convert {val} to {expected_type}")
+
+            SETTINGS[key]["default"] = val
 
 
 
@@ -104,4 +123,10 @@ def get(key):
     Returns:
         The corresponding value if found, or None otherwise.
     """
-    return SETTINGS[key]["default"] if key in SETTINGS else None
+    if key in SETTINGS:
+        if isinstance(SETTINGS[key], str):
+            return SETTINGS[SETTINGS[key]]["default"]
+        else:
+            return SETTINGS[key]["default"]
+    else:
+        return None

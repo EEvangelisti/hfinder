@@ -2,7 +2,7 @@
     "d": {
         "mode": "train",
         "type": "str",
-        "long": "data_dir",
+        "long": "tiff_dir",
         "default": "data",
         "help": "folder containing training data"},
     "th": {
