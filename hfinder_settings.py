@@ -8,25 +8,19 @@ import ast
 import json
 from pydoc import locate
 
+# Each setting is defined by a short name, a long name, a type, a default value,
+# and an optional mode. Types are given as Python dotted strings (e.g. `"int"`, 
+# `"float"`, `"tuple"`, `"str"`), and converted automatically upon loading. 
+# Booleans must be given as strings `"true"` / `"false"`.
 SETTINGS = {}
 
-with open("settings.json", "r") as f:
+with open("hfinder_settings.json", "r") as f:
     SETTINGS = json.load(f)
 
-REQUIRED_FIELDS = ["type", "mode", "default"]
 for key in list(SETTINGS.keys()):
     elt = SETTINGS[key]
-    missing = [sub for sub in REQUIRED_FIELDS if sub not in elt]
-    if missing:
-        HFinder_log.warn(f"Missing fields {missing} in parameter '{key}' → removing.")
-        del SETTINGS[key]
-        continue
 
     py_type = locate(elt["type"])
-    if not callable(py_type):
-        HFinder_log.warn(f"Invalid type '{elt['type']}' in parameter '{key}' → removing.")
-        del SETTINGS[key]
-
     elt["type"] = py_type
     if "long" in elt:
         SETTINGS[elt["long"]] = key
