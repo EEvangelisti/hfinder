@@ -5,13 +5,13 @@
         "long": "tiff_dir",
         "default": "data",
         "help": "folder containing training data"},
-    "th": {
+    "t": {
         "mode": "train",
         "type": "str",
         "long": "auto_thresold",
         "default": "auto",
         "help": "thresolding strategy"},
-    "sz" : {
+    "s" : {
         "mode": "train",
         "type": "tuple",
         "long": "target_size",
@@ -29,13 +29,13 @@
         "long": "model",
         "default": "yolov8n-seg.pt",
         "help": "YOLO model"},
-    "dbg": {
+    "b": {
         "mode": "*",
         "type": "bool",
         "long": "debug_mode",
         "default": 0,
         "help": "switch on/off debug mode"},
-    "vf": {
+    "v": {
         "mode": "train",
         "type": "float",
         "long": "validation_frac",
