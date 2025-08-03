@@ -508,15 +508,15 @@ def compose_hue_fusion(channels, selected_channels, palette, noise_channels=None
 
     for ch in selected_channels:
         frame = channels[ch]
-        hue = HFinder_palette.get_color(ch, palette=palette)[0] #np.random.rand()
+        hue = HFinder_palette.get_color(ch, palette=palette)[0]
         colored = colorize_with_hue(frame, hue) 
-        rgb += colored  # additive mixing
+        rgb += colored
 
     # Ajout de bruit visuel contrôlé
     if noise_channels:
         for ch in noise_channels:
             frame = channels[ch]
-            hue = HFinder_palette.get_color(ch, palette=palette)[0] #np.random.rand()
+            hue = HFinder_palette.get_color(ch, palette=palette)[0]
             noise = colorize_with_hue(frame, hue)
             rgb += 0.3 * noise 
 

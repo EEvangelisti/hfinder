@@ -25,19 +25,12 @@ def main():
 
     # ---- Subcommand: check_masks ----
     parser_check = subparsers.add_parser("check", help="Generate and validate binary masks")
-    parser_check.add_argument("--mode", type=str,
-                              default=HFinder_settings.get("mode"),
-                              help="Run mode (normal or debug)")
+    HFinder_settings.define_arguments(parser_check, "check")
     parser_check.set_defaults(func=generate_training_dataset)
 
     # ---- Subcommand: train ----
     parser_train = subparsers.add_parser("train", help="Train YOLOv8 model on hyphae dataset")
-    parser_train.add_argument("--epochs", type=int,
-                              default=HFinder_settings.get("epochs"),
-                              help="Number of training epochs")
-    parser_train.add_argument("--model", type=str,
-                              default=HFinder_settings.get("model"),
-                              help="Base model")
+    HFinder_settings.define_arguments(parser_train, "train")
     parser_train.set_defaults(func=train)
 
     # ---- Parse args and dispatch ----
