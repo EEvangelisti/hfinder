@@ -44,8 +44,7 @@ where action can be `check`, `train`, or `predict`.
 ## Creating a training dataset 
 
 <p align=center>
-|-|-|-|
-|![image](doc/image-0001_1_3.jpg)|![image](doc/image-0007_2_3.jpg)|![image](doc/image-0008_4.jpg)|
+<img src="doc/image-0001_1_3.jpg"/>
 </p>
 
 HFinder allows you to prepare YOLO-compatible datasets from microscopy images 
