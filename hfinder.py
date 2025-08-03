@@ -8,6 +8,7 @@ import hfinder_preprocess as HFinder_preprocess
 
 def generate_training_dataset(args):
     HFinder_settings.load(args)
+    HFinder_settings.print_summary()
     folder_tree = HFinder_folders.create_training_folders()
     HFinder_preprocess.generate_training_dataset(folder_tree)
     return folder_tree

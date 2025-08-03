@@ -7,6 +7,7 @@ This module manages global configuration settings for the HFinder pipeline.
 import ast
 import json
 from pydoc import locate
+import hfinder_log as HFinder_log
 
 # Each setting is defined by a short name, a long name, a type, a default value,
 # and an optional mode. Types are given as Python dotted strings (e.g. `"int"`, 
@@ -101,7 +102,11 @@ def load(args):
 
     for key, val in user_defined.items():
         if key in SETTINGS:
-            expected_type = SETTINGS[key]["type"]
+            if isinstance(SETTINGS[key], str):
+                elt = SETTINGS[SETTINGS[key]]
+            else:
+                elt = SETTINGS[key]
+            expected_type = elt["type"]
             
             if isinstance(val, str) and expected_type in (tuple, list):
                 try:
@@ -109,14 +114,13 @@ def load(args):
                 except Exception:
                     raise ValueError(f"Could not parse {val} as {expected_type}")
             
-            # Forcer la conversion si ce n’est pas le bon type
             if not isinstance(val, expected_type):
                 try:
                     val = expected_type(val)
                 except Exception:
                     raise ValueError(f"Could not convert {val} to {expected_type}")
 
-            SETTINGS[key]["default"] = val
+            elt["default"] = val
 
 
 
@@ -137,3 +141,16 @@ def get(key):
             return SETTINGS[key]["default"]
     else:
         return None
+        
+
+
+def print_summary():
+    global SETTINGS
+    for key in SETTINGS.keys():
+        if isinstance(SETTINGS[key], dict):
+            HFinder_log.info(f"{SETTINGS[key]['long']}: {SETTINGS[key]['default']}")
+
+
+
+        
+        
