@@ -13,15 +13,28 @@ SETTINGS = {}
 with open("settings.json", "r") as f:
     SETTINGS = json.load(f)
 
-keys = list(SETTINGS.keys())
-for key in keys:
+REQUIRED_FIELDS = ["type", "mode", "default"]
+for key in list(SETTINGS.keys()):
     elt = SETTINGS[key]
-    elt["type"] = locate(elt["type"])
-    SETTINGS[elt["long"]] = key
+    missing = [sub for sub in REQUIRED_FIELDS if sub not in elt]
+    if missing:
+        HFinder_log.warn(f"Missing fields {missing} in parameter '{key}' → removing.")
+        del SETTINGS[key]
+        continue
+
+    py_type = locate(elt["type"])
+    if not callable(py_type):
+        HFinder_log.warn(f"Invalid type '{elt['type']}' in parameter '{key}' → removing.")
+        del SETTINGS[key]
+
+    elt["type"] = py_type
+    if "long" in elt:
+        SETTINGS[elt["long"]] = key
+
     if elt["type"] is tuple:
         elt["default"] = ast.literal_eval(elt["default"])
     else:
-        elt["default"] = elt["type"](elt["default"])
+        elt["default"] = py_type(elt["default"])
 
 
 
