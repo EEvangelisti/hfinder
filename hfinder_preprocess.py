@@ -683,7 +683,7 @@ def generate_dataset(folder_tree, base, n, c, channels, polygons_per_channel):
                     noise_channels = {noise_channels}, \
                     noise_candidates = {noise_candidates}")
 
-        palette = HFinder_palette.get_random_palette(colorspace="HSV", hash_data=filename)
+        palette = HFinder_palette.get_random_palette(hash_data=filename)
         img_rgb = compose_hue_fusion(channels, combo, palette, noise_channels=noise_channels)
         img_path = os.path.join(img_dir, filename)
         save_image_as_jpg(img_rgb, img_path)

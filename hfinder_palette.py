@@ -11,7 +11,6 @@ import colorsys
 import hfinder_log as HFinder_log
 
 base_palette_hsv = []
-base_palette_rgb = []
 
 N = 6
 start_hex="#FF0000"
@@ -25,12 +24,10 @@ for i in range(N):
     s = start_hsv[1]
     v = start_hsv[2]
     base_palette_hsv.append((h, s, v))
-    rgb = colorsys.hsv_to_rgb(h, s, v)
-    base_palette_rgb.append(rgb)
 
 
 
-def get_color(n, palette=base_palette_rgb):
+def get_color(n, palette=base_palette_hsv):
     """
     Returns the color at position n in the given palette, cycling back to the 
     start if n exceeds the palette length.
@@ -41,7 +38,7 @@ def get_color(n, palette=base_palette_rgb):
     Defaults to base_palette_rgb.
 
     Returns
-    tuple[int, int, int]: An RGB/HSV color.
+    tuple[int, int, int]: An HSV color.
     """
     return palette[n % len(palette)]
 
@@ -62,22 +59,7 @@ def rotated_palette_hsv(delta_hue=0.0):
 
 
 
-def rotated_palette_rgb(delta_hue=0.0):
-    """
-    Like rotated_palette_hsv, but returns the resulting palette in RGB format.
-
-    Arguments
-    delta_hue (float): Amount to rotate the hue, in the range [0.0, 1.0].
-
-    Returns
-    list[tuple[int, int, int]]: Rotated colors in RGB format.
-    """
-    rotated_hsv = rotated_palette_hsv(delta_hue)
-    return [tuple(int(255 * x) for x in colorsys.hsv_to_rgb(h, s, v)) for h, s, v in rotated_hsv]
-
-
-
-def get_random_palette(colorspace="RGB", hash_data=None):
+def get_random_palette(hash_data=None):
     """
     Generates a rotated version of the base palette, with a hue shift determined
     either randomly or from a hash of user-provided data (e.g. a filename or ID).
@@ -103,9 +85,6 @@ def get_random_palette(colorspace="RGB", hash_data=None):
         # Create a float between 0 and 1 for the first four bits
         hash_int = int.from_bytes(hash_bytes[:4], 'big')
         delta = (hash_int % 10**6) / 10**6  # Resolution of 1e-6
-    if colorspace.upper() == "RGB":
-        return rotated_palette_rgb(delta)
-    elif colorspace.upper() == "HSV":
-        return rotated_palette_hsv(delta)
-    else:
-        HFinder_log.fail(f"Unknown colorspace {colorspace}")
+
+    return rotated_palette_hsv(delta)
+
