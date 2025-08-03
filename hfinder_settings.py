@@ -148,9 +148,7 @@ def print_summary():
     global SETTINGS
     for key in SETTINGS.keys():
         if isinstance(SETTINGS[key], dict):
-            HFinder_log.info(f"{SETTINGS[key]['long']}: {SETTINGS[key]['default']}")
+            HFinder_log.info(f"Parameter '{SETTINGS[key]['long']}' " + \
+                             f"set to {SETTINGS[key]['default']}")
 
 
-
-        
-        
