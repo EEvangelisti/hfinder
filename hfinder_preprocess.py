@@ -15,6 +15,7 @@ from PIL import Image
 from numpy import stack, uint8
 from matplotlib.colors import hsv_to_rgb
 import hfinder_log as HFinder_log
+import hfinder_utils as HFinder_utils
 import hfinder_folders as HFinder_folders
 import hfinder_palette as HFinder_palette
 import hfinder_settings as HFinder_settings
@@ -198,6 +199,9 @@ def auto_threshold_strategy(img, threshold):
 
 
 
+
+
+
 def channel_custom_threshold(channel, threshold):
     """
     Apply custom thresholding to a single-channel image and extract YOLO-style 
@@ -233,20 +237,7 @@ def channel_custom_threshold(channel, threshold):
 
     w, h = HFinder_settings.get("target_size")
     contours, _ = cv2.findContours(binary, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-    # Prepare list to store polygons in YOLO-style normalized coordinates
-    yolo_polygons = []
-    for contour in contours:
-        # Remove redundant dimensions (e.g., shape (N,1,2) -> (N,2))
-        polygon = contour.squeeze()
-        # Skip if not a valid polygon (less than 3 points or bad shape)
-        if len(polygon.shape) != 2 or polygon.shape[0] < 3:
-            continue
-        # Normalize polygon coordinates to [0,1] range
-        norm_poly = [(x/w, y/h) for x, y in polygon]
-        # Flatten list of (x,y) pairs to a single list [x1, y1, x2, y2, ..., xn, yn]
-        flat_poly = [coord for point in norm_poly for coord in point]
-        # Store the flattened polygon
-        yolo_polygons.append(flat_poly)
+    yolo_polygons = HFinder_utils.contours_to_yolo_polygons(contours)
     return binary, yolo_polygons
 
 
@@ -465,7 +456,7 @@ def generate_contours(folder_tree, base, polygons_per_channel, channels, class_i
             if class_name not in class_ids:
                 continue
             class_id = class_ids[class_name]
-            color = HFinder_palette.get_color(class_id)
+            color = (0, 255, 0)
 
             for poly in poly:  # liste de polygones
                 # poly est une liste plate : [x1, y1, x2, y2, ..., xn, yn]
@@ -478,6 +469,8 @@ def generate_contours(folder_tree, base, polygons_per_channel, channels, class_i
                 ).reshape((-1, 1, 2))
 
                 cv2.polylines(overlay, [pts], isClosed=True, color=color, thickness=1)
+                cv2.putText(overlay, class_name, (10, 20), cv2.FONT_HERSHEY_SIMPLEX, 0.5, color, 1)
+
 
         out_path = os.path.join(contour_dir, f"{base}_{ch_name}_contours.png")
         cv2.imwrite(out_path, overlay)
@@ -732,6 +725,97 @@ def split_train_val(folder_tree):
 
 
 
+def _flat_to_pts_xy(flat, w, h):
+    """flat: [x1,y1,x2,y2,...] normalisés → ndarray (N,2) en pixels int32."""
+    assert len(flat) % 2 == 0, "Polygon length must be even."
+    pts = [(int(flat[i] * w), int(flat[i+1] * h)) for i in range(0, len(flat), 2)]
+    return np.asarray(pts, dtype=np.int32)
+
+
+
+def max_intensity_projection_multichannel(folder_tree, base, stack, polygons_per_channel, class_ids, n, c, ratio):
+    # Maximum intensity projection
+    mip = np.max(stack, axis=0)
+    stacked_channels = [
+        cv2.resize(mip[ch], (0, 0), fx=ratio, fy=ratio, interpolation=cv2.INTER_AREA)
+        for ch in range(c)
+    ]
+    w, h = HFinder_settings.get("target_size")
+    assert (stacked_channels[0].shape == (w, h))
+
+    root = folder_tree["root"]
+    masks_dir = os.path.join(root, "dataset", "masks")
+    contours_dir = os.path.join(root, "dataset", "contours")
+
+    # Pour chaque canal de la MIP, on fusionne tous les polygones de ce canal à travers Z
+    polygons_per_stacked_channel = {}
+    for ch in range(c):
+        # indices (1-based) des frames correspondant à ce canal à travers les n plans
+        indices = [j + 1 for j in range(ch, n * c, c)]  # 1, 1+c, 1+2c, ...
+        # polygons_per_channel[idx] est une liste de tuples (class_name, [poly1, poly2, ...])
+        polygons_subset = [polygons_per_channel.get(idx, []) for idx in indices]
+
+        # Pour chaque classe, construire un masque fusionné
+        for class_name, class_id in class_ids.items():
+            # Collecte des polygones plats pour cette classe sur toutes les slices
+            all_polys_px = []
+            for per_slice in polygons_subset:
+                for label, polys_list in per_slice:
+                    if label != class_name:
+                        continue
+                    # polys_list est une liste de polygones plats
+                    for flat in polys_list:
+                        if not flat: 
+                            continue
+                        pts = _flat_to_pts_xy(flat, w, h)   # (N,2)
+                        # OpenCV accepte (N,2) ou (N,1,2); (N,2) suffit pour fillPoly
+                        if pts.shape[0] >= 3:
+                            all_polys_px.append(pts)
+
+            # Si rien pour cette classe → passer
+            if not all_polys_px:
+                continue
+
+            # Masque fusionné
+            mask = np.zeros((h, w), dtype=np.uint8)
+            cv2.fillPoly(mask, all_polys_px, 255)
+
+            # Sauvegarde du masque
+            mask_path = os.path.join(masks_dir, f"{base}_MIP_{class_name}_mask.png")
+            cv2.imwrite(mask_path, mask)
+
+            # Visu des contours sur la MIP du canal
+            contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+            yolo_polygons = HFinder_utils.contours_to_yolo_polygons(contours)
+ 
+            #overlay = cv2.cvtColor(stacked_channels[ch], cv2.COLOR_GRAY2BGR)
+            #color = (0, 255, 0)  # tu peux remplacer par ta palette
+            #cv2.polylines(overlay, contours, isClosed=True, color=color, thickness=1)
+            #cv2.putText(overlay, class_name, (10, 20), cv2.FONT_HERSHEY_SIMPLEX, 0.5, color, 1)
+            #out_path = os.path.join(contours_dir, f"{base}_MIP_ch{ch+1}_{class_name}_contours.png")
+            #cv2.imwrite(out_path, overlay)
+
+            ch_key = ch + 1
+            if ch_key not in polygons_per_stacked_channel:
+                polygons_per_stacked_channel[ch_key] = []
+            polygons_per_stacked_channel[ch_key].append((class_name, yolo_polygons))
+
+    generate_contours(folder_tree, base + "_MIP", 
+    polygons_per_stacked_channel, 
+    {i+1: stacked_channels[i] for i in range(c)}, class_ids)  
+
+    # Appel: traite la MIP comme un cas sans stack (n=1)
+    generate_dataset(
+        folder_tree,
+        base + "_MIP",
+        n=1,
+        c=c,
+        channels={i+1: stacked_channels[i] for i in range(c)},
+        polygons_per_channel=polygons_per_stacked_channel
+    )
+
+
+
 def generate_training_dataset(folder_tree):
 
     # Retrieve images and assign to training or validation subsets
@@ -766,5 +850,8 @@ def generate_training_dataset(folder_tree):
         polygons_per_channel = prepare_class_inputs(folder_tree, base, channels, n, c, class_instructions[img_name], ratio)
         generate_contours(folder_tree, base, polygons_per_channel, channels, class_ids)     
         generate_dataset(folder_tree, base, n, c, channels, polygons_per_channel)
+
+        if n > 1:
+            max_intensity_projection_multichannel(folder_tree, base, img, polygons_per_channel, class_ids, n, c, ratio)
 
     split_train_val(folder_tree)
