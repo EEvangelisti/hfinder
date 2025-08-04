@@ -292,6 +292,7 @@ def prepare_class_inputs(folder_tree, base, channels, n, c, class_instructions, 
         - JSON segmentations are not supported for Z-stacks (`n > 1`); this raises a failure.
     """
     results = defaultdict(list)
+    masks_dir = HFinder_folders.get_masks_dir()
 
     for class_name, instr in class_instructions.items():
         if instr == -1:
@@ -304,9 +305,9 @@ def prepare_class_inputs(folder_tree, base, channels, n, c, class_instructions, 
                 frame = i * c + ch
                 binary, polygons = channel_custom_threshold(channels[frame], instr["threshold"])
                 results[frame].append((class_name, polygons))
-                name = f"dataset/masks/{base}_{class_name}_mask.png" if n == 1 \
-                       else f"dataset/masks/{base}_frame{frame}_{class_name}_mask.png"
-                binary_output = os.path.join(folder_tree["root"], name)
+                name = f"{base}_{class_name}_mask.png" if n == 1 \
+                       else f"{base}_frame{frame}_{class_name}_mask.png"
+                binary_output = os.path.join(masks_dir, name)
                 plt.imsave(binary_output, binary, cmap='gray')
 
         elif "segment" in instr:
@@ -321,9 +322,9 @@ def prepare_class_inputs(folder_tree, base, channels, n, c, class_instructions, 
                 frame = i * c + ch
                 binary, polygons = channel_auto_threshold(channels[frame])
                 results[frame].append((class_name, polygons))
-                name = f"dataset/masks/{base}_{class_name}_mask.png" if n == 1 \
-                       else f"dataset/masks/{base}_frame{frame}_{class_name}_mask.png"
-                binary_output = os.path.join(folder_tree["root"], name)
+                name = f"{base}_{class_name}_mask.png" if n == 1 \
+                       else f"{base}_frame{frame}_{class_name}_mask.png"
+                binary_output = os.path.join(masks_dir, name)
                 plt.imsave(binary_output, binary, cmap='gray')
 
     return results
@@ -412,8 +413,8 @@ def generate_dataset(folder_tree, base, n, c, channels, polygons_per_channel):
         dataset/labels/train/
     """
     train_dir = os.path.join("dataset", "{}", "train")
-    img_dir = os.path.join(folder_tree["root"], train_dir.format("images"))
-    lbl_dir = os.path.join(folder_tree["root"], train_dir.format("labels"))
+    img_dir = HFinder_folders.get_image_train_dir()
+    lbl_dir = HFinder_folders.get_label_train_dir()
 
     class_ids = load_class_definitions()
     target_size = HFinder_settings.get("target_size")
