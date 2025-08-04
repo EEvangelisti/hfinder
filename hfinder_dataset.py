@@ -29,11 +29,10 @@ import shutil
 import tifffile
 import numpy as np
 import matplotlib.pyplot as plt
-from glob import glob
-from collections import defaultdict
-from itertools import chain
 from PIL import Image
-#from numpy import stack, uint8
+from glob import glob
+from itertools import chain
+from collections import defaultdict
 import hfinder_log as HFinder_log
 import hfinder_utils as HFinder_utils
 import hfinder_folders as HFinder_folders
