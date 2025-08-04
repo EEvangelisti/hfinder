@@ -27,10 +27,11 @@ To run HFinder, you need to install the following dependencies:
 - The Python YOLO interface [ultralytics](https://docs.ultralytics.com/fr/quickstart/)
 - The TIFF library [tifffile](https://pypi.org/project/tifffile/) 
 
-It is recommended to use a virtual environment.
+You can do so by running:
 ```
 pip install pyyaml ultralytics tifffile
 ```
+It is recommended to use a virtual environment.
 
 ### Running
 You can then run HFinder as follows:
