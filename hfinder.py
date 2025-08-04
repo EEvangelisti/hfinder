@@ -1,16 +1,16 @@
 import argparse
 import hfinder_log as HFinder_log
 import hfinder_train as HFinder_train
+import hfinder_dataset as HFinder_dataset
 import hfinder_folders as HFinder_folders
 import hfinder_settings as HFinder_settings
-import hfinder_preprocess as HFinder_preprocess
 
 
 def generate_training_dataset(args):
     HFinder_settings.load(args)
     HFinder_settings.print_summary()
     HFinder_folders.create_session_folders()
-    HFinder_preprocess.generate_training_dataset()
+    HFinder_dataset.generate_training_dataset()
 
 
 def train(args):
