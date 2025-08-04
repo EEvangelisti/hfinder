@@ -16,6 +16,7 @@ import hfinder_utils as HFinder_utils
 import hfinder_folders as HFinder_folders
 import hfinder_palette as HFinder_palette
 import hfinder_settings as HFinder_settings
+import hfinder_imageops as HFinder_ImageOps
 
 
 
@@ -146,9 +147,6 @@ def auto_threshold_strategy(img, threshold):
         HFinder_log.fail(f"Unknown thresholding function '{threshold}'")
     
     return cv2.threshold(img, 0, 255, cv2.THRESH_BINARY + flag)
-
-
-
 
 
 
@@ -332,45 +330,6 @@ def prepare_class_inputs(folder_tree, base, channels, n, c, class_instructions, 
 
 
 
-
-
-
-def resize_multichannel_image(img):
-    """
-    Resize a multichannel image (C, H, W) to the given size using bilinear 
-    interpolation per channel.
-
-    Args:
-        img (np.ndarray): Input image of shape (C, H, W).
-        target_size (tuple): (height, width) desired.
-
-    Returns:
-        np.ndarray: Resized image of shape (C, target_height, target_width).
-    """
-
-    target_size = HFinder_settings.get("target_size")
- 
-    if img.ndim == 4:
-        n, c, h, w = img.shape
-    else:
-        n = 1 # not a stack or time series
-        c, h, w = img.shape
-    resized = np.empty((n * c, *target_size), dtype=img.dtype)
-    for n_i in range(n):
-        for c_i in range(c):
-            index = n_i * c + c_i
-            frame = img[c_i] if n == 1 else img[n_i][c_i]
-            resized[index] = cv2.resize(frame, (target_size[1], target_size[0]), interpolation=cv2.INTER_LINEAR)
-
-    ratios = tuple(x / w for x in target_size)
-    assert(ratios[0] == ratios[1]) # TODO: Remove this?
-    return {i + 1: resized[i] for i in range(n * c)}, ratios[0], (n, c)
-
-
-
-
-
-
 def generate_contours(folder_tree, base, polygons_per_channel, channels, class_ids):
     root = folder_tree["root"]
     contour_dir = os.path.join(root, "dataset", "contours")
@@ -386,10 +345,10 @@ def generate_contours(folder_tree, base, polygons_per_channel, channels, class_i
             class_id = class_ids[class_name]
             color = (0, 255, 0)
 
-            for poly in poly:  # liste de polygones
-                # poly est une liste plate : [x1, y1, x2, y2, ..., xn, yn]
+            for poly in poly:
+                # poly is a flat list: [x1, y1, x2, y2, ..., xn, yn]
                 if len(poly) < 6:
-                    continue  # ignore les artefacts trop petits (moins de 3 points)
+                    continue  # ignore artifacts (tiny polygons)
 
                 pts = np.array(
                     [(int(poly[i] * w), int(poly[i + 1] * h)) for i in range(0, len(poly), 2)],
@@ -405,30 +364,7 @@ def generate_contours(folder_tree, base, polygons_per_channel, channels, class_i
 
 
 
-def compose_hue_fusion(channels, selected_channels, palette, noise_channels=None):
-    """
-    Compose an RGB image by blending each selected channel with a random hue.
-    """
-    h, w = next(iter(channels.values())).shape
-    rgb = np.zeros((h, w, 3), dtype=np.float32)
 
-    for ch in selected_channels:
-        frame = channels[ch]
-        hue = HFinder_palette.get_color(ch, palette=palette)[0]
-        colored = HFinder_utils.colorize_with_hue(frame, hue) 
-        rgb += colored
-
-    # Ajout de bruit visuel contrôlé
-    if noise_channels:
-        for ch in noise_channels:
-            frame = channels[ch]
-            hue = HFinder_palette.get_color(ch, palette=palette)[0]
-            noise = HFinder_utils.colorize_with_hue(frame, hue)
-            rgb += 0.3 * noise 
-
-    # Clip to [0, 1] in case of saturation, then scale to [0, 255]
-    rgb = np.clip(rgb, 0, 1)
-    return (rgb * 255).astype(np.uint8)
 
 
 
@@ -515,7 +451,7 @@ def generate_dataset(folder_tree, base, n, c, channels, polygons_per_channel):
                     noise_candidates = {noise_candidates}")
 
         palette = HFinder_palette.get_random_palette(hash_data=filename)
-        img_rgb = compose_hue_fusion(channels, combo, palette, noise_channels=noise_channels)
+        img_rgb = HFinder_ImageOps.compose_hue_fusion(channels, combo, palette, noise_channels=noise_channels)
         img_path = os.path.join(img_dir, filename)
         Image.fromarray(img_rgb).save(img_path, "JPEG")
 
@@ -673,12 +609,12 @@ def generate_training_dataset(folder_tree):
             continue
 
         img = tifffile.imread(img_path)
-        if not HFinder_utils.is_valid_image_format(img):
+        if not HFinder_ImageOps.is_valid_image_format(img):
             HFinder_log.warn(f"Skipping file {img_name}, wrong shape {img.shape}")
             continue
 
         # Resize image and split channels.
-        channels, ratio, (n, c) = resize_multichannel_image(img)   
+        channels, ratio, (n, c) = HFinder_ImageOps.resize_multichannel_image(img)   
         
         # Retrieve polygons for each class and generate dataset.  
         polygons_per_channel = prepare_class_inputs(folder_tree, base, channels, n, c, class_instructions[img_name], ratio)

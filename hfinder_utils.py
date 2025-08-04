@@ -2,7 +2,6 @@ import os
 import yaml
 import numpy as np
 from itertools import combinations
-from matplotlib.colors import hsv_to_rgb
 import hfinder_folders as HFinder_folders
 import hfinder_settings as HFinder_settings
 
@@ -51,17 +50,7 @@ def write_yolo_yaml(class_ids, folder_tree):
     HFinder_folders.set_subtree(folder_tree, "dataset/yaml", output_path)
 
 
-def colorize_with_hue(frame, hue):
-    norm = frame.astype(np.float32)
-    norm /= norm.max() if norm.max() > 0 else 1
 
-    h = np.full_like(norm, hue)
-    s = np.ones_like(norm)
-    v = norm
-
-    hsv = np.stack([h, s, v], axis=-1)  # shape (H, W, 3)
-    rgb = hsv_to_rgb(hsv)
-    return rgb
 
 
 
@@ -94,21 +83,6 @@ def contours_to_yolo_polygons(contours):
         # Store the flattened polygon
         yolo_polygons.append(flat_poly)
     return yolo_polygons
-
-
-
-def is_valid_image_format(img):
-    # Time series of z-stacks.
-    if img.ndim == 4:
-        _, c, h, w = img.shape
-        return c < 10 and h > 64 and w > 64
-    # Standard multichannel TIFF.
-    elif img.ndim == 3:
-        c, h, w = img.shape
-        return c < 10 and h > 64 and w > 64
-    # Other formats we cannot handle.
-    else:
-        return False
 
 
 
