@@ -2,6 +2,8 @@ import os
 from datetime import datetime
 import hfinder_log as HFinder_log
 
+SESSION_TREE = {}
+
 def get_timestamp():
     """
     Returns the current date and time as a string formatted as 'YYYY-MM-DD_HH-MM-SS'.
@@ -84,7 +86,10 @@ def create_training_folders():
     }
     create_tree(base, folder_tree)
     folder_tree["root"] = os.path.abspath(base)
+    global SESSION_TREE
+    SESSION_TREE = folder_tree
     return folder_tree
+
 
 
 def get_subtree(tree, path):
@@ -186,7 +191,7 @@ def append_subtree(tree, path, value):
 
 def get_image_train_dir():
     return os.path.join("dataset", "images", "train")
-    
+
 def get_label_train_dir():
     return os.path.join("dataset", "labels", "train")   
 
@@ -196,4 +201,15 @@ def get_image_val_dir():
 def get_label_val_dir():
     return os.path.join("dataset", "labels", "val")   
 
-     
+def rootify(path):
+    return os.path.join(SESSION_TREE["root"], path)
+
+def get_masks_dir(root=True):
+    path = os.path.join("dataset", "masks")
+    return rootify(path) if root else path
+
+def get_contours_dir(root=True):
+    path = os.path.join("dataset", "contours")
+    return rootify(path) if root else path
+
+

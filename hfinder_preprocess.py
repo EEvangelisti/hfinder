@@ -331,8 +331,7 @@ def prepare_class_inputs(folder_tree, base, channels, n, c, class_instructions, 
 
 
 def generate_contours(folder_tree, base, polygons_per_channel, channels, class_ids):
-    root = folder_tree["root"]
-    contour_dir = os.path.join(root, "dataset", "contours")
+    contours_dir = HFinder_folders.get_contours_dir()
 
     for ch_name, polygons in polygons_per_channel.items():
         img = channels[ch_name]
@@ -359,7 +358,7 @@ def generate_contours(folder_tree, base, polygons_per_channel, channels, class_i
                 cv2.putText(overlay, class_name, (10, 20), cv2.FONT_HERSHEY_SIMPLEX, 0.5, color, 1)
 
 
-        out_path = os.path.join(contour_dir, f"{base}_{ch_name}_contours.png")
+        out_path = os.path.join(contours_dir, f"{base}_{ch_name}_contours.png")
         cv2.imwrite(out_path, overlay)
 
 
@@ -517,9 +516,8 @@ def max_intensity_projection_multichannel(folder_tree, base, stack, polygons_per
     w, h = HFinder_settings.get("target_size")
     assert (stacked_channels[0].shape == (w, h))
 
-    root = folder_tree["root"]
-    masks_dir = os.path.join(root, "dataset", "masks")
-    contours_dir = os.path.join(root, "dataset", "contours")
+    masks_dir = HFinder_folders.get_masks_dir()
+    contours_dir = HFinder_folders.get_contours_dir()
 
     # Pour chaque canal de la MIP, on fusionne tous les polygones de ce canal à travers Z
     polygons_per_stacked_channel = {}
