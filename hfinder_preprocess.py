@@ -17,6 +17,7 @@ import hfinder_folders as HFinder_folders
 import hfinder_palette as HFinder_palette
 import hfinder_settings as HFinder_settings
 import hfinder_imageops as HFinder_ImageOps
+import hfinder_geometry as HFinder_geometry
 
 
 
@@ -185,7 +186,7 @@ def channel_custom_threshold(channel, threshold):
 
     w, h = HFinder_settings.get("target_size")
     contours, _ = cv2.findContours(binary, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-    yolo_polygons = HFinder_utils.contours_to_yolo_polygons(contours)
+    yolo_polygons = HFinder_geometry.contours_to_yolo_polygons(contours)
     return binary, yolo_polygons
 
 
@@ -485,16 +486,7 @@ def split_train_val():
 
 
 
-def _flat_to_pts_xy(flat, w, h):
-    """flat: [x1,y1,x2,y2,...] normalisés → ndarray (N,2) en pixels int32."""
-    assert len(flat) % 2 == 0, "Polygon length must be even."
-    pts = [(int(flat[i] * w), int(flat[i+1] * h)) for i in range(0, len(flat), 2)]
-    return np.asarray(pts, dtype=np.int32)
-
-
-
 def max_intensity_projection_multichannel(base, stack, polygons_per_channel, class_ids, n, c, ratio):
-    # Maximum intensity projection
     mip = np.max(stack, axis=0)
     stacked_channels = [
         cv2.resize(mip[ch], (0, 0), fx=ratio, fy=ratio, interpolation=cv2.INTER_AREA)
@@ -507,7 +499,7 @@ def max_intensity_projection_multichannel(base, stack, polygons_per_channel, cla
     contours_dir = HFinder_folders.get_contours_dir()
 
     # Pour chaque canal de la MIP, on fusionne tous les polygones de ce canal à travers Z
-    polygons_per_stacked_channel = {}
+    polygons_per_stacked_channel = defaultdict(list)
     for ch in range(c):
         # indices (1-based) des frames correspondant à ce canal à travers les n plans
         indices = [j + 1 for j in range(ch, n * c, c)]  # 1, 1+c, 1+2c, ...
@@ -526,7 +518,7 @@ def max_intensity_projection_multichannel(base, stack, polygons_per_channel, cla
                     for flat in polys_list:
                         if not flat: 
                             continue
-                        pts = _flat_to_pts_xy(flat, w, h)   # (N,2)
+                        pts = HFinder_geometry.flat_to_pts_xy(flat, w, h) # (N,2)
                         # OpenCV accepte (N,2) ou (N,1,2); (N,2) suffit pour fillPoly
                         if pts.shape[0] >= 3:
                             all_polys_px.append(pts)
@@ -545,11 +537,9 @@ def max_intensity_projection_multichannel(base, stack, polygons_per_channel, cla
 
             # Visu des contours sur la MIP du canal
             contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-            yolo_polygons = HFinder_utils.contours_to_yolo_polygons(contours)
+            yolo_polygons = HFinder_geometry.contours_to_yolo_polygons(contours)
  
             ch_key = ch + 1
-            if ch_key not in polygons_per_stacked_channel:
-                polygons_per_stacked_channel[ch_key] = []
             polygons_per_stacked_channel[ch_key].append((class_name, yolo_polygons))
 
     stacked_channels_dict = {i+1: stacked_channels[i] for i in range(c)}

@@ -7,17 +7,27 @@ import hfinder_settings as HFinder_settings
 
 
 def is_valid_image_format(img):
-    # Time series of z-stacks.
+    """
+    Check whether a NumPy array corresponds to a valid multichannel or z-stack 
+    image. Supported image formats are:
+        - 3D multichannel images with shape (C, H, W)
+        - 4D z-stacks with shape (Z, C, H, W)
+    Images must have fewer than 10 channels and spatial dimensions greater than 
+    64×64.
+
+    :param img: Input image array.
+    :type img: np.ndarray
+    :returns: True if the image matches a supported format, False otherwise.
+    :rtype: bool
+    """
+    valid_ndim = False
     if img.ndim == 4:
+        valid_ndim = True
         _, c, h, w = img.shape
-        return c < 10 and h > 64 and w > 64
-    # Standard multichannel TIFF.
     elif img.ndim == 3:
+        valid_ndim = True
         c, h, w = img.shape
-        return c < 10 and h > 64 and w > 64
-    # Other formats we cannot handle.
-    else:
-        return False
+    return valid_ndim and c < 10 and h > 64 and w > 64
 
 
 
