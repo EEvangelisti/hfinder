@@ -472,11 +472,10 @@ def split_train_val(folder_tree):
     This function moves (1 - percent) of the images from the training directory
     to the validation directory, along with their corresponding label files.
     """
-    root = folder_tree["root"]
-    img_dir = os.path.join(root, HFinder_folders.get_image_train_dir())
-    lbl_dir = os.path.join(root, HFinder_folders.get_label_train_dir())
-    img_val_dir = os.path.join(root, HFinder_folders.get_image_val_dir())
-    lbl_val_dir = os.path.join(root, HFinder_folders.get_label_val_dir())
+    img_dir = HFinder_folders.get_image_train_dir()
+    lbl_dir = HFinder_folders.get_label_train_dir()
+    img_val_dir = HFinder_folders.get_image_val_dir()
+    lbl_val_dir = HFinder_folders.get_label_val_dir()
 
     image_paths = sorted(glob(os.path.join(img_dir, "*.jpg")))
     random.shuffle(image_paths)

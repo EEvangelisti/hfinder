@@ -188,21 +188,24 @@ def append_subtree(tree, path, value):
         raise TypeError(f"(HFinder) Cannot append to '{final_key}': not a list.")
     current[final_key].append(value)
 
-
-def get_image_train_dir():
-    return os.path.join("dataset", "images", "train")
-
-def get_label_train_dir():
-    return os.path.join("dataset", "labels", "train")   
-
-def get_image_val_dir():
-    return os.path.join("dataset", "images", "val")
-
-def get_label_val_dir():
-    return os.path.join("dataset", "labels", "val")   
-
 def rootify(path):
     return os.path.join(SESSION_TREE["root"], path)
+
+def get_image_train_dir(root=True):
+    path = os.path.join("dataset", "images", "train")
+    return rootify(path) if root else path
+
+def get_label_train_dir(root=True):
+    path = os.path.join("dataset", "labels", "train")
+    return rootify(path) if root else path
+
+def get_image_val_dir(root=True):
+    path = os.path.join("dataset", "images", "val")
+    return rootify(path) if root else path
+
+def get_label_val_dir(root=True):
+    path = os.path.join("dataset", "labels", "val")
+    return rootify(path) if root else path
 
 def get_masks_dir(root=True):
     path = os.path.join("dataset", "masks")
