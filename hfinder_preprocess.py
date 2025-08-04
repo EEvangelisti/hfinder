@@ -259,7 +259,7 @@ def channel_custom_segment(json_path, ratio):
 
 
 
-def prepare_class_inputs(folder_tree, base, channels, n, c, class_instructions, ratio):
+def prepare_class_inputs(base, channels, n, c, class_instructions, ratio):
     """
     Generate segmentation masks and polygon annotations per class, for each 
     frame or image channel. This function applies either:
@@ -269,8 +269,6 @@ def prepare_class_inputs(folder_tree, base, channels, n, c, class_instructions, 
     depending on the user-defined `class_instructions` for each semantic class.
 
     Args:
-        folder_tree (dict): Dictionary representing the project folder structure.
-                            Must include a "root" key pointing to the root directory.
         base (str): Base name for output files.
         channels (List[np.ndarray]): List of image channels, usually from a TIFF stack.
         n (int): Number of Z-stack frames (or images).
@@ -331,7 +329,7 @@ def prepare_class_inputs(folder_tree, base, channels, n, c, class_instructions, 
 
 
 
-def generate_contours(folder_tree, base, polygons_per_channel, channels, class_ids):
+def generate_contours(base, polygons_per_channel, channels, class_ids):
     contours_dir = HFinder_folders.get_contours_dir()
 
     for ch_name, polygons in polygons_per_channel.items():
@@ -364,15 +362,13 @@ def generate_contours(folder_tree, base, polygons_per_channel, channels, class_i
 
 
 
-def generate_dataset(folder_tree, base, n, c, channels, polygons_per_channel):
+def generate_dataset(base, n, c, channels, polygons_per_channel):
     """
     Generates training data for YOLO-based segmentation by fusing image channels
     into RGB composites and assigning segmentation masks based on annotated 
     polygon data.
 
     Parameters:
-        folder_tree (dict): A dictionary containing at least the "root" path to 
-        the dataset folder structure.
         base (str): Base filename used to construct output image and label names.
         n (int): Number of spatial/Z positions (frames) to combine per training example.
         c (int): Number of channels per spatial position.
@@ -563,15 +559,13 @@ def max_intensity_projection_multichannel(folder_tree, base, stack, polygons_per
 
     stacked_channels_dict = {i+1: stacked_channels[i] for i in range(c)}
     generate_contours(
-        folder_tree,
-        base + "_MIP", 
+        base + "_MIP",
         polygons_per_stacked_channel, 
         stacked_channels_dict,
         class_ids
     )  
 
     generate_dataset(
-        folder_tree,
         base + "_MIP",
         n=1, c=c,
         channels=stacked_channels_dict,
@@ -607,9 +601,9 @@ def generate_training_dataset(folder_tree):
             continue
 
         channels, ratio, (n, c) = HFinder_ImageOps.resize_multichannel_image(img)   
-        polygons_per_channel = prepare_class_inputs(folder_tree, base, channels, n, c, class_instructions[img_name], ratio)
-        generate_contours(folder_tree, base, polygons_per_channel, channels, class_ids)     
-        generate_dataset(folder_tree, base, n, c, channels, polygons_per_channel)
+        polygons_per_channel = prepare_class_inputs(base, channels, n, c, class_instructions[img_name], ratio)
+        generate_contours(base, polygons_per_channel, channels, class_ids)     
+        generate_dataset(base, n, c, channels, polygons_per_channel)
 
         if n > 1:
             max_intensity_projection_multichannel(folder_tree, base, img, polygons_per_channel, class_ids, n, c, ratio)
