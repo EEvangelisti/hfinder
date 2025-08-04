@@ -23,18 +23,19 @@ import hfinder_geometry as HFinder_geometry
 
 def load_class_definitions():
     """
-    Extract class names from all JSON files in `data_dir/classes/`, assign them integer IDs.
+    Extract class names from all JSON files in `tiff_dir/classes/` and 
+    assign them integer IDs.
 
-    Returns:
-        dict: Mapping from class name to class ID (int), e.g., {"hyphae": 0, "nuclei": 1}
+    :returns: Mapping from class name to class ID, e.g., {"hyphae": 0, "nuclei": 1}
+    :rtype: dict
     """
     class_dir = os.path.join(HFinder_settings.get("tiff_dir"), "classes")
     if not os.path.isdir(class_dir):
-        raise FileNotFoundError(f"No such directory: {class_dir}")
+        HFinder_log.fail(f"No such directory: {class_dir}")
 
-    class_files = sorted(glob(os.path.join(class_dir, "*.json")))
-    class_names = [os.path.splitext(os.path.basename(f))[0] for f in class_files]
-    return {name: idx for idx, name in enumerate(class_names)}
+    files = sorted(glob(os.path.join(class_dir, "*.json")))
+    names = [os.path.splitext(os.path.basename(f))[0] for f in files]
+    return {name: i for i, name in enumerate(names)}
 
 
 
@@ -332,17 +333,16 @@ def prepare_class_inputs(base, channels, n, c, class_instructions, ratio):
 
 def generate_contours(base, polygons_per_channel, channels, class_ids):
     contours_dir = HFinder_folders.get_contours_dir()
-
+    color = (0, 255, 0)
     for ch_name, polygons in polygons_per_channel.items():
-        img = channels[ch_name]
-        h, w = img.shape
-        overlay = cv2.cvtColor(img, cv2.COLOR_GRAY2BGR)
+        channel = channels[ch_name]
+        h, w = channel.shape
+        overlay = cv2.cvtColor(channel, cv2.COLOR_GRAY2BGR)
 
         for class_name, poly in polygons:
             if class_name not in class_ids:
                 continue
             class_id = class_ids[class_name]
-            color = (0, 255, 0)
 
             for poly in poly:
                 # poly is a flat list: [x1, y1, x2, y2, ..., xn, yn]

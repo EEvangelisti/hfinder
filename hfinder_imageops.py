@@ -72,7 +72,7 @@ def colorize_with_hue(frame, hue):
     s = np.ones_like(norm)
     v = norm
 
-    hsv = np.stack([h, s, v], axis=-1)  # shape (H, W, 3)
+    hsv = np.stack([h, s, v], axis=-1)
     rgb = hsv_to_rgb(hsv)
     return rgb
 
