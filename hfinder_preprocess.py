@@ -21,24 +21,6 @@ import hfinder_geometry as HFinder_geometry
 
 
 
-def load_class_definitions():
-    """
-    Extract class names from all JSON files in `tiff_dir/classes/` and 
-    assign them integer IDs.
-
-    :returns: Mapping from class name to class ID, e.g., {"hyphae": 0, "nuclei": 1}
-    :rtype: dict
-    """
-    class_dir = os.path.join(HFinder_settings.get("tiff_dir"), "classes")
-    if not os.path.isdir(class_dir):
-        HFinder_log.fail(f"No such directory: {class_dir}")
-
-    files = sorted(glob(os.path.join(class_dir, "*.json")))
-    names = [os.path.splitext(os.path.basename(f))[0] for f in files]
-    return {name: i for i, name in enumerate(names)}
-
-
-
 def load_image_class_mappings():
     """
     Load and consolidate image-to-class channel mappings from JSON annotation files.
@@ -409,7 +391,7 @@ def generate_dataset(base, n, c, channels, polygons_per_channel):
     img_dir = HFinder_folders.get_image_train_dir()
     lbl_dir = HFinder_folders.get_label_train_dir()
 
-    class_ids = load_class_definitions()
+    class_ids = HFinder_utils.load_class_definitions()
     target_size = HFinder_settings.get("target_size")
 
     annotated_channels = {ch for ch, polys in polygons_per_channel.items() if polys}
@@ -563,7 +545,7 @@ def generate_training_dataset():
     data_dir = HFinder_settings.get("tiff_dir")
     image_paths = sorted(glob(os.path.join(data_dir, "*.tif")))
     
-    class_ids = load_class_definitions()
+    class_ids = HFinder_utils.load_class_definitions()
     HFinder_utils.write_yolo_yaml(class_ids)
     class_instructions = load_image_class_mappings()
 

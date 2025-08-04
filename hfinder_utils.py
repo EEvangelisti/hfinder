@@ -2,7 +2,9 @@ import os
 import sys
 import yaml
 import numpy as np
+from glob import glob
 from itertools import combinations
+import hfinder_log as HFinder_log
 import hfinder_folders as HFinder_folders
 import hfinder_settings as HFinder_settings
 
@@ -11,13 +13,10 @@ def redirect_all_output(log_path):
     """
     Redirects both stdout and stderr to a specified log file.
 
-    Parameters:
-        log_path (str): Path to the log file where output will be written.
-
-    Returns:
-        tuple: A pair of file descriptors (stdout_fd, stderr_fd) representing
-               the original stdout and stderr. These must be passed to 
-               `restore_output` to revert redirection.
+    :param log_path: Path to the log file where output will be written
+    :type log_path: str
+    :returns: File descriptors representing the original stdout and stderr
+    :retype: tuple
     """
     sys.stdout.flush()
     sys.stderr.flush()
@@ -103,6 +102,25 @@ def save_yolo_segmentation_label(file_path, polygons, class_ids):
             poly = [coord for point in poly for coord in point]
             line = [str(class_id)] + [f"{x:.6f}" for x in poly]
             f.write(" ".join(line) + "\n")
+
+
+
+def load_class_definitions():
+    """
+    Extract class names from all JSON files in `tiff_dir/classes/` and 
+    assign them integer IDs.
+
+    :returns: Mapping from class name to class ID, e.g., {"hyphae": 0, "nuclei": 1}
+    :rtype: dict
+    """
+    class_dir = os.path.join(HFinder_settings.get("tiff_dir"), "classes")
+    if not os.path.isdir(class_dir):
+        HFinder_log.fail(f"No such directory: {class_dir}")
+
+    files = sorted(glob(os.path.join(class_dir, "*.json")))
+    names = [os.path.splitext(os.path.basename(f))[0] for f in files]
+    return {name: i for i, name in enumerate(names)}
+
 
 
 
