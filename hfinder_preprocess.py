@@ -364,10 +364,6 @@ def generate_contours(folder_tree, base, polygons_per_channel, channels, class_i
 
 
 
-
-
-
-
 def generate_dataset(folder_tree, base, n, c, channels, polygons_per_channel):
     """
     Generates training data for YOLO-based segmentation by fusing image channels
@@ -594,7 +590,6 @@ def generate_training_dataset(folder_tree):
     class_ids = load_class_definitions()
     HFinder_utils.write_yolo_yaml(class_ids, folder_tree)
     class_instructions = load_image_class_mappings()
-    target_size = HFinder_settings.get("target_size")
 
     for img_path in image_paths:
         img_name = os.path.basename(img_path)
@@ -611,10 +606,7 @@ def generate_training_dataset(folder_tree):
             HFinder_log.warn(f"Skipping file {img_name}, wrong shape {img.shape}")
             continue
 
-        # Resize image and split channels.
         channels, ratio, (n, c) = HFinder_ImageOps.resize_multichannel_image(img)   
-        
-        # Retrieve polygons for each class and generate dataset.  
         polygons_per_channel = prepare_class_inputs(folder_tree, base, channels, n, c, class_instructions[img_name], ratio)
         generate_contours(folder_tree, base, polygons_per_channel, channels, class_ids)     
         generate_dataset(folder_tree, base, n, c, channels, polygons_per_channel)

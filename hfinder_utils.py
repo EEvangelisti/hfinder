@@ -26,28 +26,20 @@ def write_yolo_yaml(class_ids, folder_tree):
         - Writes a `dataset.yaml` file to the dataset directory.
         - Updates `folder_tree` with a new key `"dataset/yaml"` pointing to the
           YAML path.
-
-    Output YAML format:
-        path: <root directory>
-        train: <path to training images>
-        val: <path to validation images>
-        nc: <number of classes>
-        names: <list of class names ordered by index>
     """
-    root = folder_tree["root"]
     data = {
-        "path": root,
-        "train": os.path.join(root, "dataset", "images", "train"),
-        "val": os.path.join(root, "dataset", "images", "val"),
+        "path": HFinder_folders.get_root(),
+        "train": HFinder_folders.get_image_train_dir(),
+        "val": HFinder_folders.get_image_val_dir(),
         "nc": len(class_ids),
         "names": [name for name, idx in sorted(class_ids.items(), key=lambda x: x[1])]
     }
 
-    output_path = os.path.join(root, "dataset", "dataset.yaml")
-    with open(output_path, "w") as f:
+    yaml_path = os.path.join(HFinder_folders.get_dataset_dir(), "dataset.yaml")
+    with open(yaml_path, "w") as f:
         yaml.dump(data, f, default_flow_style=False, sort_keys=False)
 
-    HFinder_folders.set_subtree(folder_tree, "dataset/yaml", output_path)
+    HFinder_folders.set_subtree(folder_tree, "dataset/yaml", yaml_path)
 
 
 
