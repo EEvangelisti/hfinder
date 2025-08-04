@@ -1,16 +1,14 @@
 import os
 import cv2
 import json
-import yaml
 import random
 import shutil
 import tifffile
 import numpy as np
 import matplotlib.pyplot as plt
 from glob import glob
-from pathlib import Path
 from collections import defaultdict
-from itertools import chain, combinations
+from itertools import chain
 from PIL import Image
 from numpy import stack, uint8
 import hfinder_log as HFinder_log
@@ -35,53 +33,6 @@ def load_class_definitions():
     class_files = sorted(glob(os.path.join(class_dir, "*.json")))
     class_names = [os.path.splitext(os.path.basename(f))[0] for f in class_files]
     return {name: idx for idx, name in enumerate(class_names)}
-
-
-
-def write_yolo_yaml(class_ids, folder_tree):
-    """
-    Generate and save a YOLO-compatible dataset YAML file.
-
-    This function creates a `dataset.yaml` file describing the training and validation
-    dataset structure for YOLOv8, including class names, number of classes, and paths
-    to training/validation images. The file is written to `dataset/dataset.yaml`
-    within the project's root directory.
-
-    Parameters:
-        class_ids (dict): A dictionary mapping class names (str) to class indices (int).
-                          Example: {"cell": 0, "noise": 1}
-        folder_tree (dict): A dictionary representing folder paths used in the project.
-                            Must include the key "root" with the path to the root directory.
-
-    Side effects:
-        - Writes a `dataset.yaml` file to the dataset directory.
-        - Updates `folder_tree` with a new key `"dataset/yaml"` pointing to the YAML path.
-
-    Output YAML format:
-        path: <root directory>
-        train: <path to training images>
-        val: <path to validation images>
-        nc: <number of classes>
-        names: <list of class names ordered by index>
-    """
-
-    root = folder_tree["root"]
-    train_dir = os.path.join(root, "dataset", "images", "train")
-    val_dir = os.path.join(root, "dataset", "images", "val")
-
-    data = {
-        "path": root,
-        "train": train_dir,
-        "val": val_dir,
-        "nc": len(class_ids),
-        "names": [name for name, idx in sorted(class_ids.items(), key=lambda x: x[1])]
-    }
-
-    output_path = os.path.join(root, "dataset", "dataset.yaml")
-    with open(output_path, "w") as f:
-        yaml.dump(data, f, default_flow_style=False, sort_keys=False)
-
-    HFinder_folders.set_subtree(folder_tree, "dataset/yaml", output_path)
 
 
 
@@ -454,21 +405,6 @@ def generate_contours(folder_tree, base, polygons_per_channel, channels, class_i
 
 
 
-def power_set(channels, n, c):
-    if n == 1:
-        s = list(channels)
-        return [combo for r in range(1, 4) for combo in combinations(s, r)]
-    
-    all_combos = []
-    for stack_index in range(n):
-        # Canaux de ce stack présents dans `channels`
-        group = [ch for ch in channels if (ch - 1) // c == stack_index]
-        for r in range(1, 4):
-            all_combos.extend(combinations(group, r))
-    return all_combos
-
-
-
 def compose_hue_fusion(channels, selected_channels, palette, noise_channels=None):
     """
     Compose an RGB image by blending each selected channel with a random hue.
@@ -554,7 +490,7 @@ def generate_dataset(folder_tree, base, n, c, channels, polygons_per_channel):
         print(f"polygons_per_channel.keys() = {polygons_per_channel.keys()}, \
                 list(annotated_channels) = {list(annotated_channels)}")
 
-    for combo in power_set(annotated_channels, n, c):
+    for combo in HFinder_utils.power_set(annotated_channels, n, c):
         filename = f"{os.path.splitext(base)[0]}_" + "_".join(map(str, combo)) + ".jpg"
         
         # Any channel containing annotations must never be used as background 
@@ -690,29 +626,25 @@ def max_intensity_projection_multichannel(folder_tree, base, stack, polygons_per
             contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
             yolo_polygons = HFinder_utils.contours_to_yolo_polygons(contours)
  
-            #overlay = cv2.cvtColor(stacked_channels[ch], cv2.COLOR_GRAY2BGR)
-            #color = (0, 255, 0)  # tu peux remplacer par ta palette
-            #cv2.polylines(overlay, contours, isClosed=True, color=color, thickness=1)
-            #cv2.putText(overlay, class_name, (10, 20), cv2.FONT_HERSHEY_SIMPLEX, 0.5, color, 1)
-            #out_path = os.path.join(contours_dir, f"{base}_MIP_ch{ch+1}_{class_name}_contours.png")
-            #cv2.imwrite(out_path, overlay)
-
             ch_key = ch + 1
             if ch_key not in polygons_per_stacked_channel:
                 polygons_per_stacked_channel[ch_key] = []
             polygons_per_stacked_channel[ch_key].append((class_name, yolo_polygons))
 
-    generate_contours(folder_tree, base + "_MIP", 
-    polygons_per_stacked_channel, 
-    {i+1: stacked_channels[i] for i in range(c)}, class_ids)  
+    stacked_channels_dict = {i+1: stacked_channels[i] for i in range(c)}
+    generate_contours(
+        folder_tree,
+        base + "_MIP", 
+        polygons_per_stacked_channel, 
+        stacked_channels_dict,
+        class_ids
+    )  
 
-    # Appel: traite la MIP comme un cas sans stack (n=1)
     generate_dataset(
         folder_tree,
         base + "_MIP",
-        n=1,
-        c=c,
-        channels={i+1: stacked_channels[i] for i in range(c)},
+        n=1, c=c,
+        channels=stacked_channels_dict,
         polygons_per_channel=polygons_per_stacked_channel
     )
 
@@ -726,7 +658,7 @@ def generate_training_dataset(folder_tree):
     
     # Loads classes and preprocessing instructions.
     class_ids = load_class_definitions()
-    write_yolo_yaml(class_ids, folder_tree)
+    HFinder_utils.write_yolo_yaml(class_ids, folder_tree)
     class_instructions = load_image_class_mappings()
     target_size = HFinder_settings.get("target_size")
 

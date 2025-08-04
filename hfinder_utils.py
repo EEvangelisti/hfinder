@@ -1,7 +1,54 @@
+import os
+import yaml
 import numpy as np
+from itertools import combinations
 from matplotlib.colors import hsv_to_rgb
+import hfinder_folders as HFinder_folders
 import hfinder_settings as HFinder_settings
 
+
+
+def write_yolo_yaml(class_ids, folder_tree):
+    """
+    Generate and save a YOLO-compatible dataset YAML file. This function creates
+    a `dataset.yaml` file describing the training and validation dataset 
+    structure for YOLOv8, including class names, number of classes, and paths
+    to training/validation images. The file is written to `dataset/dataset.yaml`
+    within the project's root directory.
+
+    Parameters:
+        class_ids (dict): A dictionary mapping class names (str) to class 
+                          indices (int). Example: {"cell": 0, "noise": 1}
+        folder_tree (dict): A dictionary representing folder paths used in the 
+                            project. Must include the key "root" with the path 
+                            to the root directory.
+
+    Side effects:
+        - Writes a `dataset.yaml` file to the dataset directory.
+        - Updates `folder_tree` with a new key `"dataset/yaml"` pointing to the
+          YAML path.
+
+    Output YAML format:
+        path: <root directory>
+        train: <path to training images>
+        val: <path to validation images>
+        nc: <number of classes>
+        names: <list of class names ordered by index>
+    """
+    root = folder_tree["root"]
+    data = {
+        "path": root,
+        "train": os.path.join(root, "dataset", "images", "train"),
+        "val": os.path.join(root, "dataset", "images", "val"),
+        "nc": len(class_ids),
+        "names": [name for name, idx in sorted(class_ids.items(), key=lambda x: x[1])]
+    }
+
+    output_path = os.path.join(root, "dataset", "dataset.yaml")
+    with open(output_path, "w") as f:
+        yaml.dump(data, f, default_flow_style=False, sort_keys=False)
+
+    HFinder_folders.set_subtree(folder_tree, "dataset/yaml", output_path)
 
 
 def colorize_with_hue(frame, hue):
@@ -84,4 +131,20 @@ def save_yolo_segmentation_label(file_path, polygons, class_ids):
             poly = [coord for point in poly for coord in point]
             line = [str(class_id)] + [f"{x:.6f}" for x in poly]
             f.write(" ".join(line) + "\n")
+
+
+
+def power_set(channels, n, c):
+    if n == 1:
+        s = list(channels)
+        return [combo for r in range(1, 4) for combo in combinations(s, r)]
+    
+    all_combos = []
+    for stack_index in range(n):
+        # Canaux de ce stack présents dans `channels`
+        group = [ch for ch in channels if (ch - 1) // c == stack_index]
+        for r in range(1, 4):
+            all_combos.extend(combinations(group, r))
+    return all_combos
+
 
