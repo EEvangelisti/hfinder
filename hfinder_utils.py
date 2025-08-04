@@ -1,5 +1,20 @@
-
+import numpy as np
+from matplotlib.colors import hsv_to_rgb
 import hfinder_settings as HFinder_settings
+
+
+
+def colorize_with_hue(frame, hue):
+    norm = frame.astype(np.float32)
+    norm /= norm.max() if norm.max() > 0 else 1
+
+    h = np.full_like(norm, hue)
+    s = np.ones_like(norm)
+    v = norm
+
+    hsv = np.stack([h, s, v], axis=-1)  # shape (H, W, 3)
+    rgb = hsv_to_rgb(hsv)
+    return rgb
 
 
 
@@ -35,4 +50,38 @@ def contours_to_yolo_polygons(contours):
 
 
 
+def is_valid_image_format(img):
+    # Time series of z-stacks.
+    if img.ndim == 4:
+        _, c, h, w = img.shape
+        return c < 10 and h > 64 and w > 64
+    # Standard multichannel TIFF.
+    elif img.ndim == 3:
+        c, h, w = img.shape
+        return c < 10 and h > 64 and w > 64
+    # Other formats we cannot handle.
+    else:
+        return False
+
+
+
+def save_yolo_segmentation_label(file_path, polygons, class_ids):
+    """
+    Writes YOLOv8-style segmentation labels to a .txt file, with one line per 
+    polygon, using normalized coordinates.
+
+    Parameters:
+        file_path (str): Path to the output label file.
+        polygons (list[tuple[str, list[tuple[float, float]]]]): List of tuples 
+        (class_name, polygon).
+        class_ids (dict[str, int]): Mapping from class names to YOLO integer IDs.
+    """
+    with open(file_path, "w") as f:
+        for class_name, poly in polygons:
+            if class_name not in class_ids:
+                continue
+            class_id = class_ids[class_name]
+            poly = [coord for point in poly for coord in point]
+            line = [str(class_id)] + [f"{x:.6f}" for x in poly]
+            f.write(" ".join(line) + "\n")
 

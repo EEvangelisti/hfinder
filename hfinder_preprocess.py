@@ -13,7 +13,6 @@ from collections import defaultdict
 from itertools import chain, combinations
 from PIL import Image
 from numpy import stack, uint8
-from matplotlib.colors import hsv_to_rgb
 import hfinder_log as HFinder_log
 import hfinder_utils as HFinder_utils
 import hfinder_folders as HFinder_folders
@@ -382,18 +381,7 @@ def prepare_class_inputs(folder_tree, base, channels, n, c, class_instructions, 
 
 
 
-def is_valid_image_format(img):
-    # Time series of z-stacks.
-    if img.ndim == 4:
-        _, c, h, w = img.shape
-        return c < 10 and h > 64 and w > 64
-    # Standard multichannel TIFF.
-    elif img.ndim == 3:
-        c, h, w = img.shape
-        return c < 10 and h > 64 and w > 64
-    # Other formats we cannot handle.
-    else:
-        return False
+
 
 
 def resize_multichannel_image(img):
@@ -429,17 +417,6 @@ def resize_multichannel_image(img):
 
 
 
-def colorize_with_hue(frame, hue):
-    norm = frame.astype(np.float32)
-    norm /= norm.max() if norm.max() > 0 else 1
-
-    h = np.full_like(norm, hue)
-    s = np.ones_like(norm)
-    v = norm
-
-    hsv = np.stack([h, s, v], axis=-1)  # shape (H, W, 3)
-    rgb = hsv_to_rgb(hsv)
-    return rgb
 
 
 
@@ -502,7 +479,7 @@ def compose_hue_fusion(channels, selected_channels, palette, noise_channels=None
     for ch in selected_channels:
         frame = channels[ch]
         hue = HFinder_palette.get_color(ch, palette=palette)[0]
-        colored = colorize_with_hue(frame, hue) 
+        colored = HFinder_utils.colorize_with_hue(frame, hue) 
         rgb += colored
 
     # Ajout de bruit visuel contrôlé
@@ -510,81 +487,12 @@ def compose_hue_fusion(channels, selected_channels, palette, noise_channels=None
         for ch in noise_channels:
             frame = channels[ch]
             hue = HFinder_palette.get_color(ch, palette=palette)[0]
-            noise = colorize_with_hue(frame, hue)
+            noise = HFinder_utils.colorize_with_hue(frame, hue)
             rgb += 0.3 * noise 
 
     # Clip to [0, 1] in case of saturation, then scale to [0, 255]
     rgb = np.clip(rgb, 0, 1)
     return (rgb * 255).astype(np.uint8)
-
-
-
-def convert_polygon_to_yolo_segmentation(polygon):
-    """
-    Generates a filename by combining a base name and a list of values, 
-    typically used to uniquely identify frame/channel combinations.
-
-    Parameters
-        base (str): The base name (usually the TIFF filename).
-        combo (list[int]): A list of integers (e.g., frame/channel indices).
-
-    Returns
-        str: A string filename ending with .jpg.
-    """
-    return [coord for point in polygon for coord in point]
-
-
-
-def make_filename(base, combo):
-    """
-    Generates a filename by combining a base name and a list of values, 
-    typically used to uniquely identify frame/channel combinations.
-
-    Parameters
-        base (str): The base name (usually the TIFF filename).
-        combo (list[int]): A list of integers (e.g., frame/channel indices).
-
-    Returns
-        str: A string filename ending with .jpg.
-    """
-    return f"{os.path.splitext(base)[0]}_" + "_".join(map(str, combo)) + ".jpg"
-
-
-
-def save_image_as_jpg(img_rgb, path):
-    """
-    Generates a filename by combining a base name and a list of values, 
-    typically used to uniquely identify frame/channel combinations.
-
-    Parameters
-        base (str): The base name (usually the TIFF filename).
-        combo (list[int]): A list of integers (e.g., frame/channel indices).
-
-    Returns
-        str: A string filename ending with .jpg.
-    """
-    Image.fromarray(img_rgb).save(path, "JPEG")
-
-
-
-def save_yolo_segmentation_label(file_path, polygons, class_ids):
-    """
-    Writes YOLOv8-style segmentation labels to a .txt file, with one line per polygon, using normalized coordinates.
-
-    Parameters:
-        file_path (str): Path to the output label file.
-        polygons (list[tuple[str, list[tuple[float, float]]]]): List of tuples 
-        (class_name, polygon).
-        class_ids (dict[str, int]): Mapping from class names to YOLO integer IDs.
-    """
-    with open(file_path, "w") as f:
-        for class_name, poly in polygons:
-            if class_name not in class_ids:
-                continue
-            class_id = class_ids[class_name]
-            poly = convert_polygon_to_yolo_segmentation(poly)
-            line = [str(class_id)] + [f"{x:.6f}" for x in poly]
-            f.write(" ".join(line) + "\n")
 
 
 
@@ -631,12 +539,6 @@ def generate_dataset(folder_tree, base, n, c, channels, polygons_per_channel):
         JPEG images and corresponding YOLO segmentation labels, saved under:
         dataset/images/train/
         dataset/labels/train/
-
-    See Also:
-        power_set(): for generating valid channel combinations.
-        compose_hue_fusion(): for creating the RGB image from grayscale channels.
-        save_yolo_segmentation_label(): for saving labels in YOLO polygon format.
-        make_filename(): for deterministic filename generation from channel combos.
     """
     train_dir = os.path.join("dataset", "{}", "train")
     img_dir = os.path.join(folder_tree["root"], train_dir.format("images"))
@@ -653,7 +555,7 @@ def generate_dataset(folder_tree, base, n, c, channels, polygons_per_channel):
                 list(annotated_channels) = {list(annotated_channels)}")
 
     for combo in power_set(annotated_channels, n, c):
-        filename = make_filename(base, combo)
+        filename = f"{os.path.splitext(base)[0]}_" + "_".join(map(str, combo)) + ".jpg"
         
         # Any channel containing annotations must never be used as background 
         # noise, even when not selected for the current input combination. This 
@@ -679,12 +581,12 @@ def generate_dataset(folder_tree, base, n, c, channels, polygons_per_channel):
         palette = HFinder_palette.get_random_palette(hash_data=filename)
         img_rgb = compose_hue_fusion(channels, combo, palette, noise_channels=noise_channels)
         img_path = os.path.join(img_dir, filename)
-        save_image_as_jpg(img_rgb, img_path)
+        Image.fromarray(img_rgb).save(img_path, "JPEG")
 
         annotations = list(chain.from_iterable(polygons_per_channel.get(ch, []) for ch in combo))
         if annotations:
             label_path = os.path.join(lbl_dir, os.path.splitext(filename)[0] + ".txt")
-            save_yolo_segmentation_label(label_path, annotations, class_ids)
+            HFinder_utils.save_yolo_segmentation_label(label_path, annotations, class_ids)
 
 
 
@@ -839,7 +741,7 @@ def generate_training_dataset(folder_tree):
             continue
 
         img = tifffile.imread(img_path)
-        if not is_valid_image_format(img):
+        if not HFinder_utils.is_valid_image_format(img):
             HFinder_log.warn(f"Skipping file {img_name}, wrong shape {img.shape}")
             continue
 
