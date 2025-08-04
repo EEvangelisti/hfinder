@@ -454,16 +454,11 @@ def generate_dataset(base, n, c, channels, polygons_per_channel):
 
 
 
-def split_train_val(folder_tree):
+def split_train_val():
     """
-    Splits the dataset into training and validation sets.
-
-    Parameters:
-        folder_tree (dict): Dictionary containing the root path of the dataset structure.
-        percent (float): Proportion of images to keep in the training set (default is 0.8).
-
-    This function moves (1 - percent) of the images from the training directory
-    to the validation directory, along with their corresponding label files.
+    Splits the dataset into training and validation sets. This function moves 
+    (1 - percent) of the images from the training directory to the validation 
+    directory, along with their corresponding label files.
     """
     img_dir = HFinder_folders.get_image_train_dir()
     lbl_dir = HFinder_folders.get_label_train_dir()
@@ -498,7 +493,7 @@ def _flat_to_pts_xy(flat, w, h):
 
 
 
-def max_intensity_projection_multichannel(folder_tree, base, stack, polygons_per_channel, class_ids, n, c, ratio):
+def max_intensity_projection_multichannel(base, stack, polygons_per_channel, class_ids, n, c, ratio):
     # Maximum intensity projection
     mip = np.max(stack, axis=0)
     stacked_channels = [
@@ -574,15 +569,12 @@ def max_intensity_projection_multichannel(folder_tree, base, stack, polygons_per
 
 
 
-def generate_training_dataset(folder_tree):
-
-    # Retrieve images and assign to training or validation subsets
+def generate_training_dataset():
     data_dir = HFinder_settings.get("tiff_dir")
     image_paths = sorted(glob(os.path.join(data_dir, "*.tif")))
     
-    # Loads classes and preprocessing instructions.
     class_ids = load_class_definitions()
-    HFinder_utils.write_yolo_yaml(class_ids, folder_tree)
+    HFinder_utils.write_yolo_yaml(class_ids)
     class_instructions = load_image_class_mappings()
 
     for img_path in image_paths:
@@ -606,6 +598,6 @@ def generate_training_dataset(folder_tree):
         generate_dataset(base, n, c, channels, polygons_per_channel)
 
         if n > 1:
-            max_intensity_projection_multichannel(folder_tree, base, img, polygons_per_channel, class_ids, n, c, ratio)
+            max_intensity_projection_multichannel(base, img, polygons_per_channel, class_ids, n, c, ratio)
 
-    split_train_val(folder_tree)
+    split_train_val()

@@ -9,14 +9,13 @@ import hfinder_preprocess as HFinder_preprocess
 def generate_training_dataset(args):
     HFinder_settings.load(args)
     HFinder_settings.print_summary()
-    folder_tree = HFinder_folders.create_training_folders()
-    HFinder_preprocess.generate_training_dataset(folder_tree)
-    return folder_tree
+    HFinder_folders.create_session_folders()
+    HFinder_preprocess.generate_training_dataset()
 
 
 def train(args):
-    folder_tree = generate_training_dataset(args)
-    HFinder_train.train_yolo_model(folder_tree)
+    generate_training_dataset(args)
+    HFinder_train.run()
 
 
 def main():
