@@ -50,7 +50,7 @@ def compatible_modes(actual, expected):
     bool: True if the argument is relevant to the expected mode, or if it is 
     universal ("*") — otherwise False.
     """
-    return actual == "*" or actual == expected
+    return actual == "*" or actual == expected or actual in expected.split("|")
 
 
 
