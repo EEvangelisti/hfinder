@@ -25,7 +25,8 @@ HFinder is intended for researchers studying plant–microbe interactions and ho
 To run HFinder, you need to install the following dependencies:
 - The YAML library [pyyaml](https://pypi.org/project/PyYAML/)
 - The Python YOLO interface [ultralytics](https://docs.ultralytics.com/fr/quickstart/)
-- The TIFF library [tifffile](https://pypi.org/project/tifffile/) 
+- The TIFF library [tifffile](https://pypi.org/project/tifffile/)
+- The Python image processing library [scikit-image](https://scikit-image.org/)
 
 You can do so by running:
 ```
