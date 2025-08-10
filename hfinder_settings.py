@@ -135,13 +135,27 @@ def get(key):
         The corresponding value if found, or None otherwise.
     """
     if key in SETTINGS:
-        if isinstance(SETTINGS[key], str):
-            return SETTINGS[SETTINGS[key]]["default"]
+        out = SETTINGS[key]
+        if isinstance(out, str):
+            if out in SETTINGS:
+                return SETTINGS[out]["default"]
+            else:
+                return out
         else:
             return SETTINGS[key]["default"]
     else:
         return None
-        
+
+
+
+def set(key, value, replace=True):
+    global SETTINGS
+    if key in SETTINGS:
+        if replace:
+            SETTINGS[key] = value
+    else:
+        SETTINGS[key] = value
+
 
 
 def print_summary():

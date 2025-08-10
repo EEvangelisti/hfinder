@@ -115,7 +115,7 @@ def load_image_class_mappings():
 
 
 
-def prepare_class_inputs(base, channels, n, c, class_instructions, ratio):
+def prepare_class_inputs(channels, n, c, class_instructions, ratio):
     """
     Generate segmentation masks and polygon annotations per class, for each 
     frame or image channel. This function applies either:
@@ -125,7 +125,6 @@ def prepare_class_inputs(base, channels, n, c, class_instructions, ratio):
     depending on the user-defined `class_instructions` for each semantic class.
 
     Args:
-        base (str): Base name for output files.
         channels (List[np.ndarray]): List of image channels, usually from a TIFF stack.
         n (int): Number of Z-stack frames (or images).
         c (int): Number of channels per frame.
@@ -147,6 +146,7 @@ def prepare_class_inputs(base, channels, n, c, class_instructions, ratio):
     """
     results = defaultdict(list)
     masks_dir = HFinder_folders.get_masks_dir()
+    base = HFinder_settings.get("current_image.base")
 
     for class_name, instr in class_instructions.items():
         if instr == -1:
@@ -157,7 +157,7 @@ def prepare_class_inputs(base, channels, n, c, class_instructions, ratio):
         if "threshold" in instr:
             for i in range(n):
                 frame = i * c + ch
-                binary, polygons = HFinder_segmentation.channel_custom_threshold(base, channels[frame], instr["threshold"])
+                binary, polygons = HFinder_segmentation.channel_custom_threshold(channels[frame], instr["threshold"])
                 results[frame].append((class_name, polygons))
                 name = f"{base}_{class_name}_mask.png" if n == 1 \
                        else f"{base}_frame{frame}_{class_name}_mask.png"
@@ -174,7 +174,7 @@ def prepare_class_inputs(base, channels, n, c, class_instructions, ratio):
         else:
             for i in range(n):
                 frame = i * c + ch
-                binary, polygons = HFinder_segmentation.channel_auto_threshold(base, channels[frame])
+                binary, polygons = HFinder_segmentation.channel_auto_threshold(channels[frame])
                 results[frame].append((class_name, polygons))
                 name = f"{base}_{class_name}_mask.png" if n == 1 \
                        else f"{base}_frame{frame}_{class_name}_mask.png"
@@ -210,7 +210,6 @@ def generate_contours(base, polygons_per_channel, channels, class_ids):
 
                 cv2.polylines(overlay, [pts], isClosed=True, color=color, thickness=1)
                 cv2.putText(overlay, class_name, (10, 20), cv2.FONT_HERSHEY_SIMPLEX, 0.5, color, 1)
-
 
         out_path = os.path.join(contours_dir, f"{base}_{ch_name}_contours.png")
         cv2.imwrite(out_path, overlay)
@@ -425,7 +424,8 @@ def generate_training_dataset():
         img_name = os.path.basename(img_path)
         HFinder_log.info(f"Processing {img_name}")
         base = os.path.splitext(img_name)[0]
-        
+        HFinder_settings.set("current_image.base", base)
+
         # TODO: Should we include these as noise instead of discarding them?
         if img_name not in class_instructions:
             HFinder_log.warn(f"Skipping file {img_name} - no annotations")
@@ -437,7 +437,7 @@ def generate_training_dataset():
             continue
 
         channels, ratio, (n, c) = HFinder_ImageOps.resize_multichannel_image(img)   
-        polygons_per_channel = prepare_class_inputs(base, channels, n, c, class_instructions[img_name], ratio)
+        polygons_per_channel = prepare_class_inputs(channels, n, c, class_instructions[img_name], ratio)
         generate_contours(base, polygons_per_channel, channels, class_ids)     
         generate_dataset(base, n, c, channels, polygons_per_channel)
 

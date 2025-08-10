@@ -29,10 +29,11 @@ import hfinder_geometry as HFinder_geometry
 
 
 
-def auto_threshold_strategy(base, img, threshold):
+def auto_threshold_strategy(img, threshold):
     assert img.dtype == np.uint8, "Input image must be uint8"
     
     if False: # FIXME: Insert this with an option
+        base = HFinder_settings.get("current_image.base")
         fig, _ = skimage.filters.try_all_threshold(img)
         root = HFinder_folders.get_masks_dir()
         output = os.path.join(root, f"{base}_all_threshold.jpg")
@@ -70,7 +71,7 @@ def auto_threshold_strategy(base, img, threshold):
 
 
 
-def channel_custom_threshold(base, channel, threshold):
+def channel_custom_threshold(channel, threshold):
     """
     Apply custom thresholding to a single-channel image and extract YOLO-style 
     polygon annotations. This function performs binary thresholding followed by
@@ -92,7 +93,7 @@ def channel_custom_threshold(base, channel, threshold):
     """
     if isinstance(threshold, str):
 
-        _, binary = auto_threshold_strategy(base, channel, threshold.lower())
+        _, binary = auto_threshold_strategy(channel, threshold.lower())
 
     else:
 
@@ -114,7 +115,7 @@ def channel_custom_threshold(base, channel, threshold):
 
 
 
-def channel_auto_threshold(base, channel):
+def channel_auto_threshold(channel):
     """
     Apply automatic thresholding to a single-channel image to extract binary 
     masks and YOLO-style polygons. This is a wrapper around 
@@ -130,7 +131,7 @@ def channel_auto_threshold(base, channel):
     :retype: tuple[np.ndarray, List[List[float]]]
     """
     auto_threshold = HFinder_settings.get("auto_threshold")
-    return channel_custom_threshold(base, channel, auto_threshold)
+    return channel_custom_threshold(channel, auto_threshold)
 
 
 
