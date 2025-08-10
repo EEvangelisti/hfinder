@@ -213,7 +213,7 @@ def auto_threshold_strategy(img, threshold):
         HFinder_log.warn(f"Unknown thresholding function '{threshold}'")
         return auto_threshold_strategy(img, "otsu")
 
-     return float(thresh), noise_and_gaps(img > thresh)
+    return float(thresh), noise_and_gaps(img > thresh)
 
 
 
