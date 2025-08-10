@@ -10,19 +10,25 @@
         "type": "str",
         "long": "auto_threshold",
         "default": "auto",
-        "help": "thresolding strategy"},
+        "help": "Thresholding strategy: {auto, otsu, isodata, yen, li, triangle} or numeric (percentile <1, absolute ≥1). ‘auto’ selects Otsu or Triangle based on skewness."},
     "min": {
         "mode": "preprocess|train",
         "type": "int",
         "long": "min_area_px",
         "default": 20,
-        "help": "Remove contours with area < min_area_px (in square pixels)"},
+        "help": "Remove contours smaller than this area (pixels²); raise it to suppress speckles and debris."},
+    "dist" : {
+        "mode": "preprocess|train",
+        "type": "int",
+        "long": "min_distance",
+        "default": 2,
+        "help": "Minimum Euclidean spacing between seed peaks (in pixels) before watershed; peaks closer than this are merged. Lower values split touching objects more; higher values yield fewer splits."},
     "w" : {
         "mode": "preprocess|train",
         "type": "bool",
         "long": "watershed",
         "default": 0,
-        "help": "Use watershed algorithm for mask generation"},
+        "help": "Enable watershed splitting of touching objects after binarization; helps separate merged instances."},
     "s" : {
         "mode": "train",
         "type": "tuple",

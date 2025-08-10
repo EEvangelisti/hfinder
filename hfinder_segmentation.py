@@ -23,6 +23,7 @@ import scipy
 import skimage
 import numpy as np
 import matplotlib.pyplot as plt
+from skimage.feature import peak_local_max
 from skimage.morphology import binary_closing
 from skimage.morphology import remove_small_holes
 from skimage.morphology import remove_small_objects
@@ -98,7 +99,7 @@ def fill_gaps(binary, area_threshold=50, radius=1, connectivity=2):
     :type area_threshold: int
     :param radius: Size parameter forwarded as the *radius* to
                      ``skimage.morphology.disk``.
-    :type diameter: int
+    :type radius: int
     :param connectivity: Pixel connectivity (2 → 8-connectivity in 2D).
     :type connectivity: int
     :returns: Boolean mask with small holes filled and small gaps closed.
@@ -161,14 +162,34 @@ def noise_and_gaps(img):
 
 
 
-def split_touching_watershed(binary, min_distance=2):
+def split_touching_watershed(binary):
     """
-    Split merged foreground regions using EDT + watershed.
-    Returns a label image (0 = background, 1..N = instances).
+    Split merged foreground regions using distance transform + watershed,
+    then return one contour per resulting instance.
+
+    Pipeline:
+        1) Euclidean distance transform (EDT) on the binary mask.
+        2) Seed extraction from local maxima (enforcing ``min_distance`` between peaks).
+        3) Watershed on the negative distance restricted to the foreground.
+        4) For each label, extract a single external OpenCV contour.
+
+    :param binary: Binary mask (nonzero = foreground). Boolean is recommended.
+    :type binary: np.ndarray
+    :param min_distance: Minimum spacing (in pixels) enforced between seed peaks.
+    :type min_distance: int
+    :returns: List of OpenCV contours, each as an ``(N, 1, 2)`` integer array.
+    :retype: list[np.ndarray]
+    :notes: Uses a peak detector on the distance map (``peak_local_max``) to
+            control seed separation via ``min_distance``.
     """
+    binary = to_bool(binary)
     dist = scipy.ndimage.distance_transform_edt(binary)
-    # robust seeds from local maxima of the distance map
-    peaks = skimage.morphology.local_maxima(dist)
+    min_distance = HFinder_settings.get("min_distance")
+    coords = peak_local_max(dist, min_distance=min_distance,
+                            labels=binary.astype(bool), exclude_border=False)
+    peaks = np.zeros_like(dist, dtype=bool)
+    if coords.size:
+        peaks[tuple(coords.T)] = True
     markers = scipy.ndimage.label(peaks)[0]
     labels = skimage.segmentation.watershed(-dist, markers, mask=binary)
     labels = np.asarray(labels)
@@ -182,7 +203,12 @@ def split_touching_watershed(binary, min_distance=2):
 
 def filter_contours_min_area(contours):
     """
-    Keep contours with area >= min_area_px (OpenCV area in pixel^2).
+    Keep only contours whose area is at least the configured minimum.
+
+    :param contours: OpenCV contours as returned by ``cv2.findContours``.
+    :type contours: list[np.ndarray]
+    :returns: Subset of contours with area >= ``HFinder_settings.get("min_area_px")``.
+    :retype: list[np.ndarray]
     """
     min_area_px = HFinder_settings.get("min_area_px")
     return [c for c in contours if cv2.contourArea(c) >= float(min_area_px)]
@@ -190,12 +216,39 @@ def filter_contours_min_area(contours):
 
 
 def simplify_contours(contours, epsilon=1.0):
+    """
+    Simplify contours with the Ramer–Douglas–Peucker algorithm.
+
+    :param contours: OpenCV contours (each ``(N, 1, 2)`` array).
+    :type contours: list[np.ndarray]
+    :param epsilon: Approximation tolerance in pixels (0.5–2.0 px typical).
+    :type epsilon: float
+    :returns: Simplified contours (closed polygons preserved).
+    :retype: list[np.ndarray]
+    :notes: Uses ``cv2.approxPolyDP(contour, epsilon, True)``.
+    """
     return [cv2.approxPolyDP(c, epsilon, True) for c in contours]
 
-# Ramer–Douglas–Peucker
-# Note: min_area_px ≈ π * (d_min / (2*s))**2 if you know the minimum object 
-# diameter d_min in µm and pixel size s in µm/px
+
+
+# Ramer–Douglas–Peucker algorithm.
+# Note: min_area_px ≈ π * (d_min / (2*s))**2 if we know the minimum object 
+# diameter d_min (in µm) and pixel size s (in µm/px).
+# Since OpenCV 3.2, findContours() no longer modifies the source image but 
+# returns a modified image as the first of three return parameters.
 def find_contours(binary):
+    """
+    Find external contours in a binary mask using OpenCV.
+
+    :param binary: Binary image (uint8, values in {0, 255}). Convert with
+                   ``to_uint8`` if the input is boolean.
+    :type binary: np.ndarray
+    :returns: External contours as ``(N, 1, 2)`` integer arrays.
+    :retype: list[np.ndarray]
+    :notes: In OpenCV ≥ 3.2 the source image is not modified by
+            ``cv2.findContours``; for older versions the function used to
+            alter the input and returned three values.
+    """
     contours, _ = cv2.findContours(binary,
                                    cv2.RETR_EXTERNAL,
                                    cv2.CHAIN_APPROX_SIMPLE)
