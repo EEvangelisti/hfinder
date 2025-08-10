@@ -29,7 +29,7 @@ To run HFinder, you need to install the following dependencies:
 
 You can do so by running:
 ```
-pip install pyyaml ultralytics tifffile
+pip install pyyaml ultralytics tifffile scikit-image
 ```
 It is recommended to use a virtual environment.
 
