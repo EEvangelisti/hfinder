@@ -22,30 +22,53 @@ import json
 import skimage
 import numpy as np
 import matplotlib.pyplot as plt
+from skimage.morphology import binary_closing
+from skimage.morphology import remove_small_holes
+from skimage.morphology import remove_small_objects
 import hfinder_log as HFinder_log
 import hfinder_folders as HFinder_folders
 import hfinder_settings as HFinder_settings
 import hfinder_geometry as HFinder_geometry
 
 
+def is_bool(image):
+    return image.dtype == np.bool_ or image.dtype == bool
 
-def remove_noise(img):  
-    if img.dtype == np.bool_ or img.dtype == bool:
-        mask_bool = img
-    else:
-        mask_bool = img > 0
 
-    # FIXME: Alternative methods we should consider in the future:
-    # For example, we could define an option to choose which noise removal
-    # function to use.
-    # disk1 = skimage.morphology.disk(1)
-    # clean = skimage.morphology.opening(mask_bool, footprint=disk1)
-    # clean = skimage.filters.median(mask_bool, footprint=disk1).astype(bool)
-    
-    clean_bool = skimage.morphology.remove_small_objects(mask_bool,
-                                                         min_size=20,
-                                                         connectivity=2)
-    return skimage.util.img_as_ubyte(clean_bool)
+def to_bool(image):
+    return image if is_bool(image) else image > 0
+
+
+def to_uint8(image):
+    return skimage.util.img_as_ubyte(image)
+
+
+def fill_gaps(binary, area_threshold=50, diameter=1, connectivity=2):
+    assert(is_bool(binary))
+    filled_bool = remove_small_holes(binary,
+                                     area_threshold=area_threshold,
+                                     connectivity=connectivity)
+    disk_1 = skimage.morphology.disk(diameter)
+    closed_bool = binary_closing(filled_bool, footprint=disk_1)
+    return closed_bool
+
+
+# TODO: Alternative methods we should consider in the future:
+# For example, we could define an option to choose which noise removal
+# function to use.
+# disk1 = skimage.morphology.disk(1)
+# clean = skimage.morphology.opening(mask_bool, footprint=disk1)
+# clean = skimage.filters.median(mask_bool, footprint=disk1).astype(bool)
+def remove_noise(binary, min_size=20, connectivity=2):
+    assert(is_bool(binary))
+    return remove_small_objects(binary,
+                                min_size=min_size,
+                                connectivity=connectivity)
+
+
+
+def noise_and_gaps(img):
+    return to_uint8(fill_gaps(remove_noise(to_bool(img))))
 
 
 
@@ -81,7 +104,8 @@ def auto_threshold_strategy(img, threshold):
     else:
         HFinder_log.fail(f"Unknown thresholding function '{threshold}'")
 
-    binary = remove_noise(img > thresh)
+    binary = noise_and_gaps(img > thresh)
+    
     return float(thresh), binary
 
 
@@ -118,7 +142,7 @@ def channel_custom_threshold(channel, threshold):
             thresh_val = threshold
 
         _, binary = cv2.threshold(channel, thresh_val, 255, cv2.THRESH_BINARY)
-        binary = remove_noise(binary)
+        binary = noise_and_gaps(binary)
 
     contours, _ = cv2.findContours(
         binary,
