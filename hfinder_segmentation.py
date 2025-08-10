@@ -1,19 +1,30 @@
 """
-HFinder_segmentation
+hfinder_segmentation
+Label-generation helpers for confocal images (dark background, grayscale).
 
-This module provides thresholding and segmentation utilities for multichannel 
-images used in the HFinder pipeline. It supports both automatic and user-defined
-thresholding strategies, as well as the integration of custom polygon 
-annotations.
+Design choices
+--------------
+- 8-bit discipline: inputs are expected as uint8 [0–255]; conversions are 
+  centralized in `to_uint8` / `to_bool`.
+- Global thresholding via scikit-image or numeric value; `auto` selects Otsu or
+  Triangle based on skewness.
+- Morphological cleanup: remove small objects, then fill small holes + optional
+  binary closing (`radius` in pixels).
+- Optional instance splitting: watershed on the distance transform; seed density
+  controlled by `min_distance`.
+- Contour extraction: external contours with OpenCV; optional RDP simplification
+  to cap vertex count.
+- Area guard: discard contours smaller than `min_area_px`; no max-area by
+  default (hyphae may be large).
+- Outputs: uint8 masks (0/255) and YOLO-normalized polygons; intended for label
+  creation, not model preprocessing.
 
-Functions in this module operate on single channels or full image stacks to 
-produce binary masks and polygon representations, which can be used for 
-downstream dataset generation or contour extraction.
-
-Key features:
-- Adaptive and fixed thresholding methods
-- JSON-based custom segmentation support
-- Modular design for compatibility with various image preprocessing workflows
+Rationale
+---------
+- Keep annotations faithful to raw signal; use deterministic defaults and 
+  dataset-level settings.
+- Favor simple, reproducible steps that survive export changes and microscope
+  sessions.
 """
 
 import os
@@ -85,26 +96,25 @@ def to_uint8(image):
 
 def fill_gaps(binary, area_threshold=50, radius=1, connectivity=2):
     """
-    Fill small black holes inside white foreground and then perform a
-    morphological closing.
+    Fill small black holes inside the white foreground and optionally smooth
+    residual gaps by a binary closing.
 
     Pipeline:
         1) ``remove_small_holes`` fills cavities with area ≤ ``area_threshold``.
-        2) ``binary_closing`` with a disk structuring element (size parameter
-           ``radius`` is passed to ``skimage.morphology.disk``).
+        2) If ``radius > 0``, apply ``binary_closing`` using a disk of given 
+           ``radius`` (pixels).
 
-    :param binary: Boolean mask (True = foreground).
+    :param binary: Boolean mask (True = foreground). Convert with ``to_bool`` if needed.
     :type binary: np.ndarray
     :param area_threshold: Maximum hole area (in pixels) to be filled.
     :type area_threshold: int
-    :param radius: Size parameter forwarded as the *radius* to
-                     ``skimage.morphology.disk``.
+    :param radius: Structuring element radius (in pixels) for the closing; set to 0 to disable.
     :type radius: int
-    :param connectivity: Pixel connectivity (2 → 8-connectivity in 2D).
+    :param connectivity: Pixel connectivity for hole filling (2 → 8-connectivity in 2D).
     :type connectivity: int
-    :returns: Boolean mask with small holes filled and small gaps closed.
-    :rtype: np.ndarray
-    :raises AssertionError: If ``binary`` is not a boolean mask.
+    :returns: Boolean mask with small holes filled and (optionally) smoothed by closing.
+    :retype: np.ndarray
+    :raises AssertionError: If ``binary`` is not boolean.
     """
     assert is_bool(binary), "(HFinder) Assert Failure: fill_gaps"
     filled_bool = remove_small_holes(binary,
@@ -175,8 +185,6 @@ def split_touching_watershed(binary):
 
     :param binary: Binary mask (nonzero = foreground). Boolean is recommended.
     :type binary: np.ndarray
-    :param min_distance: Minimum spacing (in pixels) enforced between seed peaks.
-    :type min_distance: int
     :returns: List of OpenCV contours, each as an ``(N, 1, 2)`` integer array.
     :retype: list[np.ndarray]
     :notes: Uses a peak detector on the distance map (``peak_local_max``) to
@@ -335,12 +343,10 @@ def channel_custom_threshold(channel, threshold):
     :returns: (cleaned binary mask, list of flattened YOLO-normalized polygons).
     :rtype: tuple[np.ndarray, list[list[float]]]
     """
+    channel = to_uint8(channel)
     if isinstance(threshold, str):
-
         _, binary = auto_threshold_strategy(channel, threshold.lower())
-
     else:
-
         if threshold < 1:
             thresh_val = np.percentile(channel, threshold * 100)
         else:
