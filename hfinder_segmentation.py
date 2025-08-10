@@ -32,25 +32,86 @@ import hfinder_geometry as HFinder_geometry
 
 
 def is_bool(image):
+    """
+    Return True if the array dtype is boolean.
+
+    :param image: Input array.
+    :type image: np.ndarray
+    :returns: True if dtype is np.bool_ (or bool), False otherwise.
+    :rtype: bool
+    """
     return image.dtype == np.bool_ or image.dtype == bool
 
 
+
 def to_bool(image):
+    """
+    Convert an array to a boolean mask.
+
+    Rules:
+        - If the array is already boolean, it is returned as-is.
+        - Otherwise, strictly positive values are mapped to True (foreground),
+          and zeros/negatives to False (background).
+
+    :param image: Input array (bool, uint8 0/255, float, etc.).
+    :type image: np.ndarray
+    :returns: Boolean mask with the same shape as the input.
+    :rtype: np.ndarray
+    """
     return image if is_bool(image) else image > 0
 
 
+
 def to_uint8(image):
+    """
+    Convert an array to uint8 (0–255) using ``skimage.util.img_as_ubyte``.
+
+    Notes:
+        - bool → {False, True} maps to {0, 255}
+        - float in [0, 1] → rescaled to [0, 255]
+        - other numeric dtypes are handled per scikit-image conversion rules
+          (values may be scaled/clipped accordingly)
+
+    :param image: Input array.
+    :type image: np.ndarray
+    :returns: uint8 array in the range 0–255.
+    :rtype: np.ndarray
+    """
     return skimage.util.img_as_ubyte(image)
 
 
-def fill_gaps(binary, area_threshold=50, diameter=1, connectivity=2):
-    assert(is_bool(binary))
+
+def fill_gaps(binary, area_threshold=50, radius=1, connectivity=2):
+    """
+    Fill small black holes inside white foreground and then perform a
+    morphological closing.
+
+    Pipeline:
+        1) ``remove_small_holes`` fills cavities with area ≤ ``area_threshold``.
+        2) ``binary_closing`` with a disk structuring element (size parameter
+           ``radius`` is passed to ``skimage.morphology.disk``).
+
+    :param binary: Boolean mask (True = foreground).
+    :type binary: np.ndarray
+    :param area_threshold: Maximum hole area (in pixels) to be filled.
+    :type area_threshold: int
+    :param radius: Size parameter forwarded as the *radius* to
+                     ``skimage.morphology.disk``.
+    :type diameter: int
+    :param connectivity: Pixel connectivity (2 → 8-connectivity in 2D).
+    :type connectivity: int
+    :returns: Boolean mask with small holes filled and small gaps closed.
+    :rtype: np.ndarray
+    :raises AssertionError: If ``binary`` is not a boolean mask.
+    """
+    assert is_bool(binary), "(HFinder) Assert Failure: fill_gaps"
     filled_bool = remove_small_holes(binary,
                                      area_threshold=area_threshold,
                                      connectivity=connectivity)
-    disk_1 = skimage.morphology.disk(diameter)
+    disk_1 = skimage.morphology.disk(radius)
     closed_bool = binary_closing(filled_bool, footprint=disk_1)
     return closed_bool
+
 
 
 # TODO: Alternative methods we should consider in the future:
@@ -60,7 +121,20 @@ def fill_gaps(binary, area_threshold=50, diameter=1, connectivity=2):
 # clean = skimage.morphology.opening(mask_bool, footprint=disk1)
 # clean = skimage.filters.median(mask_bool, footprint=disk1).astype(bool)
 def remove_noise(binary, min_size=20, connectivity=2):
-    assert(is_bool(binary))
+    """
+    Remove small white connected components (“speckles”) by minimum area.
+
+    :param binary: Boolean mask (True = foreground).
+    :type binary: np.ndarray
+    :param min_size: Minimum area (in pixels) for components to keep.
+    :type min_size: int
+    :param connectivity: Pixel connectivity (2 → 8-connectivity in 2D).
+    :type connectivity: int
+    :returns: Boolean mask with small components removed.
+    :rtype: np.ndarray
+    :raises AssertionError: If ``binary`` is not a boolean mask.
+    """
+    assert is_bool(binary), "(HFinder) Assert Failure: remove_noise"
     return remove_small_objects(binary,
                                 min_size=min_size,
                                 connectivity=connectivity)
@@ -68,12 +142,46 @@ def remove_noise(binary, min_size=20, connectivity=2):
 
 
 def noise_and_gaps(img):
+    """
+    Convenience post-processing chain that returns a clean 0/255 mask.
+
+    Steps:
+        - Convert to boolean via ``to_bool``.
+        - Remove small components via ``remove_noise``.
+        - Fill small holes + closing via ``fill_gaps``.
+        - Convert back to uint8 0/255 via ``to_uint8``.
+
+    :param img: Input mask or image (bool, 0/255, float, etc.).
+    :type img: np.ndarray
+    :returns: Cleaned binary mask (uint8, values in {0, 255}).
+    :rtype: np.ndarray
+    """
     return to_uint8(fill_gaps(remove_noise(to_bool(img))))
 
 
 
 def auto_threshold_strategy(img, threshold):
-    assert img.dtype == np.uint8, "Input image must be uint8"
+    """
+    Apply a named thresholding method (scikit-image) and return the cleaned mask.
+
+    Supported methods:
+        - "isodata", "li", "otsu", "yen", "triangle"
+        - "auto": heuristic based on skewness:
+          if (mean - median) / (max + 1e-5) > 0.15 → "triangle", else "otsu".
+
+    Post-processing:
+        The binary mask (``img > thresh``) is cleaned via ``noise_and_gaps``
+        before being returned.
+
+    :param img: Grayscale image (must be uint8).
+    :type img: np.ndarray
+    :param threshold: Method name (see above).
+    :type threshold: str
+    :returns: (numeric threshold, cleaned binary mask as uint8 0/255).
+    :rtype: tuple[float, np.ndarray]
+    :raises AssertionError: If ``img`` is not uint8.
+    """
+    assert img.dtype == np.uint8, "(HFinder) Assert Failure: auto_threshold_strategy"
     
     if False: # FIXME: Insert this with an option
         base = HFinder_settings.get("current_image.base")
@@ -102,33 +210,34 @@ def auto_threshold_strategy(img, threshold):
         skew_ratio = (mean_val - median_val) / (max_val + 1e-5)
         return auto_threshold_strategy(img,"triangle" if skew_ratio > 0.15 else "otsu")
     else:
-        HFinder_log.fail(f"Unknown thresholding function '{threshold}'")
+        HFinder_log.warn(f"Unknown thresholding function '{threshold}'")
+        return auto_threshold_strategy(img, "otsu")
 
-    binary = noise_and_gaps(img > thresh)
-    
-    return float(thresh), binary
+     return float(thresh), noise_and_gaps(img > thresh)
 
 
 
 def channel_custom_threshold(channel, threshold):
     """
-    Apply custom thresholding to a single-channel image and extract YOLO-style 
-    polygon annotations. This function performs binary thresholding followed by
-    contour detection to identify regions of interest in an image channel. It 
-    converts each contour to a flattened polygon in YOLO-normalized coordinates 
-    (relative to the target image size).
+    Threshold a single channel and extract YOLO-style polygons.
 
-    :param channel: 2D NumPy array representing a single grayscale image channel
+    Behavior:
+        - If ``threshold`` is a string, use ``auto_threshold_strategy`` and
+          post-process via ``noise_and_gaps``.
+        - If ``threshold`` is numeric:
+            * ``threshold`` < 1 → percentile (e.g., 0.9 = 90th percentile)
+            * ``threshold`` ≥ 1 → absolute intensity threshold (0–255)
+          Then threshold via OpenCV and post-process via ``noise_and_gaps``.
+
+    Contours are extracted with ``cv2.findContours`` and converted to
+    flattened polygons in YOLO-normalized coordinates.
+
+    :param channel: 2D single-channel image (uint8 recommended).
     :type channel: np.ndarray
-    :param threshold: threshold, which can be interpreted as:
-        - a percentile if < 1 (e.g., 0.9 for the top 10% brightest pixels)
-        - an absolute pixel intensity threshold (0–255) if ≥ 1
-    :type threshold: float 
-    :returns: A tuple comprising:
-        - the binary thresholded image
-        - a list of polygons where each polygon is a flattened list 
-          [x1, y1, x2, y2, ..., xn, yn] in YOLO format (normalized to [0,1]).
-    :retype: tuple[np.ndarray, List[List[float]]]
+    :param threshold: Method name, percentile fraction, or absolute threshold.
+    :type threshold: str | float
+    :returns: (cleaned binary mask, list of flattened YOLO-normalized polygons).
+    :rtype: tuple[np.ndarray, list[list[float]]]
     """
     if isinstance(threshold, str):
 
@@ -157,18 +266,13 @@ def channel_custom_threshold(channel, threshold):
 
 def channel_auto_threshold(channel):
     """
-    Apply automatic thresholding to a single-channel image to extract binary 
-    masks and YOLO-style polygons. This is a wrapper around 
-    `channel_custom_threshold`, using the default threshold value defined in 
-    settings (in percent).
+    Wrapper around ``channel_custom_threshold`` that uses the default threshold
+    from settings (``HFinder_settings.get("auto_threshold")``).
 
-    :param channel: 2D NumPy array representing a single image channel
+    :param channel: 2D single-channel image (uint8 recommended).
     :type channel: np.ndarray
-    :returns:  A tuple comprising:
-        - the binary thresholded image
-        - a list of flattened polygons, each representing a detected object in 
-          YOLO-normalized coordinates
-    :retype: tuple[np.ndarray, List[List[float]]]
+    :returns: (cleaned binary mask, list of flattened YOLO-normalized polygons).
+    :rtype: tuple[np.ndarray, list[list[float]]]
     """
     auto_threshold = HFinder_settings.get("auto_threshold")
     return channel_custom_threshold(channel, auto_threshold)
@@ -177,19 +281,21 @@ def channel_auto_threshold(channel):
 
 def channel_custom_segment(json_path, ratio):
     """
-    Load and normalize segmentation polygons from a COCO-style JSON annotation 
-    file. This function reads segmentation annotations from a JSON file and 
-    rescales the coordinates to match the normalized YOLO format, according to 
-    a given `ratio` and the target image size defined in settings.
+    Load COCO-style segmentation polygons and normalize them to YOLO format.
 
-    :param json_path: Path to the JSON file containing COCO-style annotations.
+    Processing:
+        - Read ``annotations[*].segmentation`` from the JSON file.
+        - Get the target size (``w, h``) from settings.
+        - Rescale coordinates by ``ratio`` and normalize to [0, 1] by dividing
+          x by ``w`` and y by ``h``.
+        - Skip empty/odd-length segmentations (a warning is logged).
+
+    :param json_path: Path to the COCO-style JSON file.
     :type json_path: str
-    :param ratio: Scaling ratio between original image dimensions and the 
-                  target size. Used to rescale polygon coordinates.
+    :param ratio: Scale factor between the original image and the target size.
     :type ratio: float
-    :returns: a list of flattened polygons, where each polygon is represented 
-        as a list of alternating x and y coordinates (normalized to [0,1]).
-    :retype: List[List[float]]
+    :returns: List of flattened polygons [x1, y1, ..., xn, yn] normalized to [0, 1].
+    :rtype: list[list[float]]
     """
     with open(json_path, "r") as f:
         data = json.load(f)
