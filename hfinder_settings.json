@@ -6,9 +6,9 @@
         "default": "data",
         "help": "folder containing training data"},
     "t": {
-        "mode": "train",
+        "mode": "*",
         "type": "str",
-        "long": "auto_thresold",
+        "long": "auto_threshold",
         "default": "auto",
         "help": "thresolding strategy"},
     "s" : {
