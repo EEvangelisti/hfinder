@@ -11,6 +11,18 @@
         "long": "auto_threshold",
         "default": "auto",
         "help": "thresolding strategy"},
+    "min": {
+        "mode": "preprocess|train",
+        "type": "int",
+        "long": "min_area_px",
+        "default": 20,
+        "help": "Remove contours with area < min_area_px (in square pixels)"},
+    "w" : {
+        "mode": "preprocess|train",
+        "type": "bool",
+        "long": "watershed",
+        "default": 0,
+        "help": "Use watershed algorithm for mask generation"},
     "s" : {
         "mode": "train",
         "type": "tuple",

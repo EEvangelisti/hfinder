@@ -161,25 +161,16 @@ def noise_and_gaps(img):
 
 
 
-def split_touching_watershed(mask_bool, min_distance=2):
+def split_touching_watershed(binary, min_distance=2):
     """
     Split merged foreground regions using EDT + watershed.
     Returns a label image (0 = background, 1..N = instances).
     """
-    assert is_bool(mask_bool), "(HFinder) Assert Failure: split_touching_watershed"
-    dist = scipy.ndimage.distance_transform_edt(mask_bool)
+    dist = scipy.ndimage.distance_transform_edt(binary)
     # robust seeds from local maxima of the distance map
     peaks = skimage.morphology.local_maxima(dist)
     markers = scipy.ndimage.label(peaks)[0]
-    labels = skimage.segmentation.watershed(-dist, markers, mask=mask_bool)
-    return labels
-
-
-
-def labels_to_contours(labels):
-    """
-    Extract OpenCV contours for each labeled instance.
-    """
+    labels = skimage.segmentation.watershed(-dist, markers, mask=binary)
     labels = np.asarray(labels)
     contours = []
     for lab in range(1, int(labels.max()) + 1):
@@ -197,15 +188,18 @@ def filter_contours_min_area(contours):
     return [c for c in contours if cv2.contourArea(c) >= float(min_area_px)]
 
 
+
+def simplify_contours(contours, epsilon=1.0):
+    return [cv2.approxPolyDP(c, epsilon, True) for c in contours]
+
 # Ramer–Douglas–Peucker
 # Note: min_area_px ≈ π * (d_min / (2*s))**2 if you know the minimum object 
 # diameter d_min in µm and pixel size s in µm/px
-def find_contours_and_simplify(binary, epsilon=1.0):
+def find_contours(binary):
     contours, _ = cv2.findContours(binary,
                                    cv2.RETR_EXTERNAL,
                                    cv2.CHAIN_APPROX_SIMPLE)
-    contours = [cv2.approxPolyDP(c, epsilon, True) for c in contours]
-    return filter_contours_min_area(contours)
+    return contours
 
 
 
@@ -302,7 +296,18 @@ def channel_custom_threshold(channel, threshold):
         _, binary = cv2.threshold(channel, thresh_val, 255, cv2.THRESH_BINARY)
         binary = noise_and_gaps(binary)
 
-    contours = find_contours_and_simplify(binary)
+    # Find contours from the binary mask, either after watershed, or directly
+    use_watershed = HFinder_settings.get("watershed")
+    # Not used by default (due to rather messy output...)
+    if use_watershed:
+        contours = split_touching_watershed(binary)
+    else:
+        contours = find_contours(binary)
+    # Simplify contours
+    contours = simplify_contours(contours)
+    # Filter out small contours
+    contours = filter_contours_min_area(contours)
+    
     yolo_polygons = HFinder_geometry.contours_to_yolo_polygons(contours)
 
     return binary, yolo_polygons
