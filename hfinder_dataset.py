@@ -157,7 +157,7 @@ def prepare_class_inputs(base, channels, n, c, class_instructions, ratio):
         if "threshold" in instr:
             for i in range(n):
                 frame = i * c + ch
-                binary, polygons = HFinder_segmentation.channel_custom_threshold(channels[frame], instr["threshold"])
+                binary, polygons = HFinder_segmentation.channel_custom_threshold(base, channels[frame], instr["threshold"])
                 results[frame].append((class_name, polygons))
                 name = f"{base}_{class_name}_mask.png" if n == 1 \
                        else f"{base}_frame{frame}_{class_name}_mask.png"
@@ -174,7 +174,7 @@ def prepare_class_inputs(base, channels, n, c, class_instructions, ratio):
         else:
             for i in range(n):
                 frame = i * c + ch
-                binary, polygons = HFinder_segmentation.channel_auto_threshold(channels[frame])
+                binary, polygons = HFinder_segmentation.channel_auto_threshold(base, channels[frame])
                 results[frame].append((class_name, polygons))
                 name = f"{base}_{class_name}_mask.png" if n == 1 \
                        else f"{base}_frame{frame}_{class_name}_mask.png"

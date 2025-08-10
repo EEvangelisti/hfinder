@@ -16,139 +16,61 @@ Key features:
 - Modular design for compatibility with various image preprocessing workflows
 """
 
+import os
 import cv2
 import json
+import skimage
 import numpy as np
+import matplotlib.pyplot as plt
 import hfinder_log as HFinder_log
+import hfinder_folders as HFinder_folders
 import hfinder_settings as HFinder_settings
 import hfinder_geometry as HFinder_geometry
 
 
 
-def isodata_threshold(image, nbins=256, tol=0.5, max_iter=256, use_histogram=True):
-    """
-    Calcule le seuil IsoData (Ridler–Calvard) d'une image NumPy.
-
-    Paramètres
-    ----------
-    image : np.ndarray
-        Image en niveaux de gris (H x W) ou tableau quelconque convertible en float.
-        Les NaN sont ignorés.
-    nbins : int, optionnel
-        Nombre de classes pour l'histogramme (si use_histogram=True). Par défaut 256.
-    tol : float, optionnel
-        Tolérance d'arrêt sur la variation du seuil entre deux itérations. Par défaut 0.5 (en unités d'intensité).
-    max_iter : int, optionnel
-        Nombre maximal d'itérations. Par défaut 256.
-    use_histogram : bool, optionnel
-        Si True, itère sur l'histogramme (rapide et stable). Sinon, itère directement sur les pixels.
-
-    Retour
-    ------
-    float
-        Seuil IsoData.
-    """
-    x = np.asarray(image, dtype=float).ravel()
-    x = x[~np.isnan(x)]
-    if x.size == 0:
-        raise ValueError("Image vide (ou uniquement des NaN).")
-
-    if not use_histogram:
-        t = x.mean()
-        for _ in range(max_iter):
-            low = x[x <= t]
-            high = x[x >  t]
-            if low.size == 0 or high.size == 0:
-                # cas dégénéré : une classe vide -> on renvoie le seuil courant
-                return float(t)
-            t_new = 0.5 * (low.mean() + high.mean())
-            if abs(t_new - t) < tol:
-                return float(t_new)
-            t = t_new
-        return float(t)
-
-    # Version histogramme (plus rapide, comportement très proche d'ImageJ)
-    xmin, xmax = x.min(), x.max()
-    if xmin == xmax:
-        return float(xmin)
-
-    hist, edges = np.histogram(x, bins=nbins, range=(xmin, xmax))
-    centers = 0.5 * (edges[:-1] + edges[1:])
-    counts = hist.astype(float)
-
-    if counts.sum() == 0:
-        return float(centers[0])
-
-    # initialisation : moyenne pondérée
-    t = (counts @ centers) / counts.sum()
-
-    for _ in range(max_iter):
-        mask_low  = centers <= t
-        mask_high = ~mask_low
-
-        w_low  = counts[mask_low].sum()
-        w_high = counts[mask_high].sum()
-
-        if w_low == 0 or w_high == 0:
-            return float(t)
-
-        m_low  = (counts[mask_low]  @ centers[mask_low])  / w_low
-        m_high = (counts[mask_high] @ centers[mask_high]) / w_high
-
-        t_new = 0.5 * (m_low + m_high)
-
-        if abs(t_new - t) < tol:
-            return float(t_new)
-        t = t_new
-
-    return float(t)
-
-
-
-def isodata_binarize(image, **kwargs):
-    """
-    Binarise l'image avec IsoData. Retourne (binaire, seuil).
-    """
-    t = isodata_threshold(image, **kwargs)
-    return t, (np.asarray(image, dtype=float) > t)
-
-
-
-def auto_threshold_strategy(img, threshold):
-    """
-    Automatically selects the best thresholding method (OTSU or Triangle) 
-    depending on whether the signal is minority or not.
-    
-    :param img: Grayscale (uint8) image
-    :type img: np.ndarray
-    :param threshold: thresholding function (auto, otsu, triangle)
-    :type threshold: str
-    :returns: Binary image after thresholding
-    :retype: np.ndarray 
-    """
+def auto_threshold_strategy(base, img, threshold):
     assert img.dtype == np.uint8, "Input image must be uint8"
     
+    if False: # FIXME: Insert this with an option
+        fig, _ = skimage.filters.try_all_threshold(img)
+        root = HFinder_folders.get_masks_dir()
+        output = os.path.join(root, f"{base}_all_threshold.jpg")
+        print(output)
+        fig.savefig(output, dpi=300, bbox_inches="tight")
+        plt.close(fig)
+
     if threshold == "isodata":
-        return isodata_binarize(img)
-    if threshold == "otsu":
-        flag = cv2.THRESH_OTSU
+        thresh = skimage.filters.threshold_isodata(img)
+    elif threshold == "li":
+        thresh = skimage.filters.threshold_li(img)
+    elif threshold == "local":
+        thresh = skimage.filters.threshold_local(img)
+    elif threshold == "otsu":
+        thresh = skimage.filters.threshold_otsu(img)
+    elif threshold == "yen":
+        thresh = skimage.filters.threshold_otsu(img)   
     elif threshold == "triangle":
-        flag = cv2.THRESH_TRIANGLE
+        thresh = skimage.filters.threshold_triangle(img)   
     elif threshold == "auto":
         median_val = np.median(img)
         mean_val = np.mean(img)
         max_val = np.max(img)
         # Heuristic: minority signal often implies strong skew (median << mean)
         skew_ratio = (mean_val - median_val) / (max_val + 1e-5)
-        flag = cv2.THRESH_TRIANGLE if skew_ratio > 0.15 else cv2.THRESH_OTSU
+        if skew_ratio > 0.15:
+            return auto_threshold_strategy(img, "triangle") 
+        else:
+            return auto_threshold_strategy(img, "otsu") 
     else:
         HFinder_log.fail(f"Unknown thresholding function '{threshold}'")
-    
-    return cv2.threshold(img, 0, 255, cv2.THRESH_BINARY + flag)
+
+    binary = (img > thresh).astype(np.uint8) * 255
+    return thresh, binary
 
 
 
-def channel_custom_threshold(channel, threshold):
+def channel_custom_threshold(base, channel, threshold):
     """
     Apply custom thresholding to a single-channel image and extract YOLO-style 
     polygon annotations. This function performs binary thresholding followed by
@@ -170,7 +92,7 @@ def channel_custom_threshold(channel, threshold):
     """
     if isinstance(threshold, str):
 
-        _, binary = auto_threshold_strategy(channel, threshold.lower())
+        _, binary = auto_threshold_strategy(base, channel, threshold.lower())
 
     else:
 
@@ -192,7 +114,7 @@ def channel_custom_threshold(channel, threshold):
 
 
 
-def channel_auto_threshold(channel):
+def channel_auto_threshold(base, channel):
     """
     Apply automatic thresholding to a single-channel image to extract binary 
     masks and YOLO-style polygons. This is a wrapper around 
@@ -207,8 +129,8 @@ def channel_auto_threshold(channel):
           YOLO-normalized coordinates
     :retype: tuple[np.ndarray, List[List[float]]]
     """
-    auto_threshold = HFinder_settings.get("default_auto_threshold")
-    return channel_custom_threshold(channel, auto_threshold)
+    auto_threshold = HFinder_settings.get("auto_threshold")
+    return channel_custom_threshold(base, channel, auto_threshold)
 
 
 
