@@ -16,14 +16,101 @@ Key features:
 - Modular design for compatibility with various image preprocessing workflows
 """
 
-# TODO: Use pyimagej to use other segmentation algorithms such as IsoData.
-
 import cv2
 import json
 import numpy as np
 import hfinder_log as HFinder_log
 import hfinder_settings as HFinder_settings
 import hfinder_geometry as HFinder_geometry
+
+
+
+def isodata_threshold(image, nbins=256, tol=0.5, max_iter=256, use_histogram=True):
+    """
+    Calcule le seuil IsoData (Ridler–Calvard) d'une image NumPy.
+
+    Paramètres
+    ----------
+    image : np.ndarray
+        Image en niveaux de gris (H x W) ou tableau quelconque convertible en float.
+        Les NaN sont ignorés.
+    nbins : int, optionnel
+        Nombre de classes pour l'histogramme (si use_histogram=True). Par défaut 256.
+    tol : float, optionnel
+        Tolérance d'arrêt sur la variation du seuil entre deux itérations. Par défaut 0.5 (en unités d'intensité).
+    max_iter : int, optionnel
+        Nombre maximal d'itérations. Par défaut 256.
+    use_histogram : bool, optionnel
+        Si True, itère sur l'histogramme (rapide et stable). Sinon, itère directement sur les pixels.
+
+    Retour
+    ------
+    float
+        Seuil IsoData.
+    """
+    x = np.asarray(image, dtype=float).ravel()
+    x = x[~np.isnan(x)]
+    if x.size == 0:
+        raise ValueError("Image vide (ou uniquement des NaN).")
+
+    if not use_histogram:
+        t = x.mean()
+        for _ in range(max_iter):
+            low = x[x <= t]
+            high = x[x >  t]
+            if low.size == 0 or high.size == 0:
+                # cas dégénéré : une classe vide -> on renvoie le seuil courant
+                return float(t)
+            t_new = 0.5 * (low.mean() + high.mean())
+            if abs(t_new - t) < tol:
+                return float(t_new)
+            t = t_new
+        return float(t)
+
+    # Version histogramme (plus rapide, comportement très proche d'ImageJ)
+    xmin, xmax = x.min(), x.max()
+    if xmin == xmax:
+        return float(xmin)
+
+    hist, edges = np.histogram(x, bins=nbins, range=(xmin, xmax))
+    centers = 0.5 * (edges[:-1] + edges[1:])
+    counts = hist.astype(float)
+
+    if counts.sum() == 0:
+        return float(centers[0])
+
+    # initialisation : moyenne pondérée
+    t = (counts @ centers) / counts.sum()
+
+    for _ in range(max_iter):
+        mask_low  = centers <= t
+        mask_high = ~mask_low
+
+        w_low  = counts[mask_low].sum()
+        w_high = counts[mask_high].sum()
+
+        if w_low == 0 or w_high == 0:
+            return float(t)
+
+        m_low  = (counts[mask_low]  @ centers[mask_low])  / w_low
+        m_high = (counts[mask_high] @ centers[mask_high]) / w_high
+
+        t_new = 0.5 * (m_low + m_high)
+
+        if abs(t_new - t) < tol:
+            return float(t_new)
+        t = t_new
+
+    return float(t)
+
+
+
+def isodata_binarize(image, **kwargs):
+    """
+    Binarise l'image avec IsoData. Retourne (binaire, seuil).
+    """
+    t = isodata_threshold(image, **kwargs)
+    return t, (np.asarray(image, dtype=float) > t)
 
 
 
@@ -41,6 +128,8 @@ def auto_threshold_strategy(img, threshold):
     """
     assert img.dtype == np.uint8, "Input image must be uint8"
     
+    if threshold == "isodata":
+        return isodata_binarize(img)
     if threshold == "otsu":
         flag = cv2.THRESH_OTSU
     elif threshold == "triangle":
