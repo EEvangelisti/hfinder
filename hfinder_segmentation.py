@@ -29,6 +29,26 @@ import hfinder_geometry as HFinder_geometry
 
 
 
+def remove_noise(img):  
+    if img.dtype == np.bool_ or img.dtype == bool:
+        mask_bool = img
+    else:
+        mask_bool = img > 0
+
+    # FIXME: Alternative methods we should consider in the future:
+    # For example, we could define an option to choose which noise removal
+    # function to use.
+    # disk1 = skimage.morphology.disk(1)
+    # clean = skimage.morphology.opening(mask_bool, footprint=disk1)
+    # clean = skimage.filters.median(mask_bool, footprint=disk1).astype(bool)
+    
+    clean_bool = skimage.morphology.remove_small_objects(mask_bool,
+                                                         min_size=20,
+                                                         connectivity=2)
+    return skimage.util.img_as_ubyte(clean_bool)
+
+
+
 def auto_threshold_strategy(img, threshold):
     assert img.dtype == np.uint8, "Input image must be uint8"
     
@@ -45,12 +65,10 @@ def auto_threshold_strategy(img, threshold):
         thresh = skimage.filters.threshold_isodata(img)
     elif threshold == "li":
         thresh = skimage.filters.threshold_li(img)
-    elif threshold == "local":
-        thresh = skimage.filters.threshold_local(img)
     elif threshold == "otsu":
         thresh = skimage.filters.threshold_otsu(img)
     elif threshold == "yen":
-        thresh = skimage.filters.threshold_otsu(img)   
+        thresh = skimage.filters.threshold_yen(img)   
     elif threshold == "triangle":
         thresh = skimage.filters.threshold_triangle(img)   
     elif threshold == "auto":
@@ -59,15 +77,12 @@ def auto_threshold_strategy(img, threshold):
         max_val = np.max(img)
         # Heuristic: minority signal often implies strong skew (median << mean)
         skew_ratio = (mean_val - median_val) / (max_val + 1e-5)
-        if skew_ratio > 0.15:
-            return auto_threshold_strategy(img, "triangle") 
-        else:
-            return auto_threshold_strategy(img, "otsu") 
+        return auto_threshold_strategy(img,"triangle" if skew_ratio > 0.15 else "otsu")
     else:
         HFinder_log.fail(f"Unknown thresholding function '{threshold}'")
 
-    binary = (img > thresh).astype(np.uint8) * 255
-    return thresh, binary
+    binary = remove_noise(img > thresh)
+    return float(thresh), binary
 
 
 
@@ -97,12 +112,13 @@ def channel_custom_threshold(channel, threshold):
 
     else:
 
-        if threshold >= 1:
-            thresh_val = threshold
+        if threshold < 1:
+            thresh_val = np.percentile(channel, threshold * 100)
         else:
-            thresh_val = np.percentile(channel, threshold)
+            thresh_val = threshold
 
         _, binary = cv2.threshold(channel, thresh_val, 255, cv2.THRESH_BINARY)
+        binary = remove_noise(binary)
 
     contours, _ = cv2.findContours(
         binary,
