@@ -37,85 +37,17 @@ import hfinder_log as HFinder_log
 import hfinder_utils as HFinder_utils
 import hfinder_folders as HFinder_folders
 import hfinder_palette as HFinder_palette
+import hfinder_classes as HFinder_classes
 import hfinder_settings as HFinder_settings
 import hfinder_imageops as HFinder_ImageOps
 import hfinder_geometry as HFinder_geometry
 import hfinder_segmentation as HFinder_segmentation
 
 
-# TODO: move to another module
-def load_image_class_mappings():
-    """
-    Load and consolidate image-to-class channel mappings from JSON annotation files.
-
-    This function reads all JSON files in the `classes/` subdirectory of the 
-    TIFF data directory (as specified in the HFinder settings). Each file must 
-    be named after a class and contain a mapping from image filenames to either:
-      - an integer (representing the channel for that class in the image), or
-      - a dictionary containing at least the key `"channel"`.
-
-    The function first builds per-class mappings, then merges them into a 
-    unified image-wise map where, for each image, every class is listed with 
-    its associated channel mapping or `-1` if absent.
-
-    Returns:
-        dict: A nested dictionary of the form:
-              {
-                  "image_name_1": {
-                      "class_A": {"channel": X},
-                      "class_B": -1,
-                      ...
-                  },
-                  ...
-              }
-
-    Raises:
-        - Logs a fatal error and exits if:
-          - The `classes/` directory does not exist.
-          - Any annotation is malformed (missing `"channel"` key or incorrect format).
-
-    """
-    class_dir = os.path.join(HFinder_settings.get("tiff_dir"), "classes")
-    if not os.path.isdir(class_dir):
-        HFinder_log.fail(f"No such directory: {class_dir}", exit_code=4)
-
-    class_files = sorted(glob(os.path.join(class_dir, "*.json")))
-    class_names = [os.path.splitext(os.path.basename(f))[0] for f in class_files]
-
-    # Step 1: build class-wise image mappings
-    per_class_maps = {}
-    for json_file in class_files:
-        class_name = os.path.splitext(os.path.basename(json_file))[0]
-        with open(json_file, "r") as f:
-            raw_map = json.load(f)
-        per_class_maps[class_name] = {}
-        for img, val in raw_map.items():
-            if isinstance(val, int):
-                per_class_maps[class_name][img] = {"channel": val}
-            elif isinstance(val, dict) and "channel" in val:
-                per_class_maps[class_name][img] = val
-            else:
-                HFinder_log.fail(f"Invalid annotation for image {img} in class {class_name}",
-                                 exit_code=HFinder_log.EXIT_INVALID_ANNOTATION)
-
-    # Step 2: merge into image-wise mapping
-    all_images = set()
-    for d in per_class_maps.values():
-        all_images.update(d.keys())
-
-    final_map = {}
-    for img in sorted(all_images):
-        final_map[img] = {}
-        for class_name in class_names:
-            if img in per_class_maps[class_name]:
-                final_map[img][class_name] = per_class_maps[class_name][img]
-            else:
-                final_map[img][class_name] = -1
-    return final_map
 
 
 
-def prepare_class_inputs(channels, n, c, class_instructions, ratio):
+def prepare_class_inputs(img_name, channels, n, c, ratio):
     """
     Generate segmentation masks and polygon annotations per class, for each 
     frame or image channel. This function applies either:
@@ -148,14 +80,16 @@ def prepare_class_inputs(channels, n, c, class_instructions, ratio):
     masks_dir = HFinder_folders.get_masks_dir()
     base = HFinder_settings.get("current_image.base")
 
-    for class_name, instr in class_instructions.items():
+    for class_name, instr in HFinder_classes.get_items(img_name):
         if instr == -1:
             continue
     
         ch = instr["channel"]
 
         if "threshold" in instr:
-            for i in range(n):
+            from_frame = HFinder_classes.from_frame(img_name, default=0)
+            to_frame = HFinder_classes.to_frame(img_name, default=n)
+            for i in range(from_frame, to_frame):
                 frame = i * c + ch
                 binary, polygons = HFinder_segmentation.channel_custom_threshold(channels[frame], instr["threshold"])
                 results[frame].append((class_name, polygons))
@@ -172,7 +106,9 @@ def prepare_class_inputs(channels, n, c, class_instructions, ratio):
             results[ch].append((class_name, polygons))
 
         else:
-            for i in range(n):
+            from_frame = HFinder_classes.from_frame(img_name, default=0)
+            to_frame = HFinder_classes.to_frame(img_name, default=n)
+            for i in range(from_frame, to_frame):
                 frame = i * c + ch
                 binary, polygons = HFinder_segmentation.channel_auto_threshold(channels[frame])
                 results[frame].append((class_name, polygons))
@@ -339,7 +275,7 @@ def split_train_val():
 
 
 
-def max_intensity_projection_multichannel(base, stack, polygons_per_channel, class_ids, n, c, ratio):
+def max_intensity_projection_multichannel(img_name, base, stack, polygons_per_channel, class_ids, n, c, ratio):
     mip = np.max(stack, axis=0)
     stacked_channels = [
         cv2.resize(mip[ch], (0, 0), fx=ratio, fy=ratio, interpolation=cv2.INTER_AREA)
@@ -360,7 +296,8 @@ def max_intensity_projection_multichannel(base, stack, polygons_per_channel, cla
         polygons_subset = [polygons_per_channel.get(idx, []) for idx in indices]
 
         # Pour chaque classe, construire un masque fusionné
-        for class_name, class_id in class_ids.items():
+        allowed_items = [(x, y) for x, y in class_ids.items() if HFinder_classes.allows_MIP_generation(img_name, x)]
+        for class_name, class_id in allowed_items:
             # Collecte des polygones plats pour cette classe sur toutes les slices
             all_polys_px = []
             for per_slice in polygons_subset:
@@ -418,7 +355,7 @@ def generate_training_dataset():
     
     class_ids = HFinder_utils.load_class_definitions()
     HFinder_utils.write_yolo_yaml(class_ids)
-    class_instructions = load_image_class_mappings()
+    HFinder_classes.initialize()
 
     for img_path in image_paths:
         img_name = os.path.basename(img_path)
@@ -426,8 +363,7 @@ def generate_training_dataset():
         base = os.path.splitext(img_name)[0]
         HFinder_settings.set("current_image.base", base)
 
-        # TODO: Should we include these as noise instead of discarding them?
-        if img_name not in class_instructions:
+        if not HFinder_classes.has_image(img_name):
             HFinder_log.warn(f"Skipping file {img_name} - no annotations")
             continue
 
@@ -437,11 +373,11 @@ def generate_training_dataset():
             continue
 
         channels, ratio, (n, c) = HFinder_ImageOps.resize_multichannel_image(img)   
-        polygons_per_channel = prepare_class_inputs(channels, n, c, class_instructions[img_name], ratio)
+        polygons_per_channel = prepare_class_inputs(img_name, channels, n, c, ratio)
         generate_contours(base, polygons_per_channel, channels, class_ids)     
         generate_dataset(base, n, c, channels, polygons_per_channel)
 
         if n > 1:
-            max_intensity_projection_multichannel(base, img, polygons_per_channel, class_ids, n, c, ratio)
+            max_intensity_projection_multichannel(img_name, base, img, polygons_per_channel, class_ids, n, c, ratio)
 
     split_train_val()
