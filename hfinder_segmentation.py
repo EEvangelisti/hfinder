@@ -44,6 +44,91 @@ import hfinder_settings as HFinder_settings
 import hfinder_geometry as HFinder_geometry
 
 
+# ----------------
+
+def mask_to_polygons(mask,
+                     mode: str = "subtract_holes",
+                     min_area: float = 60.0,
+                     simplify_rel: float = 0.0003,
+                     simplify_min: float = 0.05,
+                     simplify_max: float = 0.3,
+                     min_vertices: int = 3):
+    """
+    Convertit un masque binaire (0/255) en polygones.
+    :param mode: "subtract_holes" (plein) ou "rings" (avec trous).
+    :return: list[list[np.ndarray]] si mode="rings" (ext + trous),
+             sinon list[np.ndarray] pour "subtract_holes".
+    """
+    m = (mask > 0).astype(np.uint8) * 255
+
+    # Récupère contours + hiérarchie
+    contours, hier = cv2.findContours(m, cv2.RETR_CCOMP, cv2.CHAIN_APPROX_NONE)
+    if hier is None:
+        return [] if mode == "subtract_holes" else []
+
+    H = hier[0]
+    h, w = m.shape[:2]
+
+    def _simplify(c):
+        L = cv2.arcLength(c, True)
+        eps = np.clip(simplify_rel * L, simplify_min, simplify_max)  # borne haute
+        return cv2.approxPolyDP(c, eps, True)
+
+    if mode == "rings":
+        # Conserve anneaux : liste de [outer, hole1, hole2, ...] par région
+        regions = []
+        for i, c in enumerate(contours):
+            # parent == -1 → contour externe
+            if H[i][3] != -1:
+                continue
+            if cv2.contourArea(c) < min_area:
+                continue
+            outer = _simplify(c)
+            if len(outer) < min_vertices:
+                continue
+
+            # enfants = trous
+            holes = []
+            ch = H[i][2]
+            while ch != -1:
+                cc = contours[ch]
+                if cv2.contourArea(cc) >= min_area:
+                    cc = _simplify(cc)
+                    if len(cc) >= min_vertices:
+                        holes.append(cc)
+                ch = H[ch][0]
+            regions.append([outer] + holes)
+        return regions
+
+    else:  # "subtract_holes"
+        # Dessine externes pleins puis efface les trous → un seul contour par région
+        filled = np.zeros_like(m)
+        for i, c in enumerate(contours):
+            if H[i][3] == -1 and cv2.contourArea(c) >= min_area:
+                cv2.drawContours(filled, [c], -1, 255, -1)
+                ch = H[i][2]
+                while ch != -1:
+                    if cv2.contourArea(contours[ch]) >= min_area:
+                        cv2.drawContours(filled, [contours[ch]], -1, 0, -1)
+                    ch = H[ch][0]
+
+        final_contours, _ = cv2.findContours(filled, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_NONE)
+        polys = []
+        for c in final_contours:
+            if cv2.contourArea(c) < min_area:
+                continue
+            c = _simplify(c)
+            if len(c) >= min_vertices:
+                polys.append(c.astype(np.int32))
+        return polys
+
+# ----------------
+
+
+
+
+
+
 def is_bool(image):
     """
     Return True if the array dtype is boolean.
@@ -223,7 +308,7 @@ def filter_contours_min_area(contours):
 
 
 
-def simplify_contours(contours, epsilon=1.0):
+def simplify_contours(contours, epsilon=0.5):
     """
     Simplify contours with the Ramer–Douglas–Peucker algorithm.
 
@@ -244,7 +329,7 @@ def simplify_contours(contours, epsilon=1.0):
 # diameter d_min (in µm) and pixel size s (in µm/px).
 # Since OpenCV 3.2, findContours() no longer modifies the source image but 
 # returns a modified image as the first of three return parameters.
-def find_contours(binary):
+def find_contours(mask):
     """
     Find external contours in a binary mask using OpenCV.
 
@@ -257,11 +342,8 @@ def find_contours(binary):
             ``cv2.findContours``; for older versions the function used to
             alter the input and returned three values.
     """
-    contours, _ = cv2.findContours(binary,
-                                   cv2.RETR_EXTERNAL,
-                                   cv2.CHAIN_APPROX_SIMPLE)
-    return contours
-
+    polygons = mask_to_polygons(mask, mode="subtract_holes")
+    return polygons
 
 
 def auto_threshold_strategy(img, threshold):
@@ -363,7 +445,7 @@ def channel_custom_threshold(channel, threshold):
     else:
         contours = find_contours(binary)
     # Simplify contours
-    contours = simplify_contours(contours)
+    #contours = simplify_contours(contours)
     # Filter out small contours
     contours = filter_contours_min_area(contours)
     

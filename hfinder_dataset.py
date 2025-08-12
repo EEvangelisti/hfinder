@@ -123,7 +123,7 @@ def prepare_class_inputs(channels, n, c, ratio):
 
 def generate_contours(base, polygons_per_channel, channels, class_ids):
     contours_dir = HFinder_folders.get_contours_dir()
-    color = (0, 255, 0)
+
     for ch_name, polygons in polygons_per_channel.items():
         channel = channels[ch_name]
         h, w = channel.shape
@@ -144,6 +144,13 @@ def generate_contours(base, polygons_per_channel, channels, class_ids):
                     dtype=np.int32
                 ).reshape((-1, 1, 2))
 
+                color = tuple(random.randint(10, 255) for _ in range(3))
+                overlay_copy = overlay.copy()
+                # Fill polygon on the overlay copy
+                cv2.fillPoly(overlay_copy, [pts], color)
+                # Blend filled polygon into original overlay with alpha=0.3
+                alpha = 0.3
+                overlay = cv2.addWeighted(overlay_copy, alpha, overlay, 1 - alpha, 0)
                 cv2.polylines(overlay, [pts], isClosed=True, color=color, thickness=1)
                 cv2.putText(overlay, class_name, (10, 20), cv2.FONT_HERSHEY_SIMPLEX, 0.5, color, 1)
 
@@ -275,6 +282,7 @@ def split_train_val():
 
 
 
+
 def max_intensity_projection_multichannel(img_name, base, stack, polygons_per_channel, class_ids, n, c, ratio):
     mip = np.max(stack, axis=0)
     stacked_channels = [
@@ -325,11 +333,9 @@ def max_intensity_projection_multichannel(img_name, base, stack, polygons_per_ch
             mask_path = os.path.join(masks_dir, f"{base}_MIP_{class_name}_mask.png")
             cv2.imwrite(mask_path, mask)
 
-            # Visu des contours sur la MIP du canal
-            contours, hierarchy = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-            # Use hierarchy to take holes into account!
-            # https://stackoverflow.com/questions/37160143/how-can-i-extract-internal-contours-holes-with-python-opencv
-            yolo_polygons = HFinder_geometry.contours_to_yolo_polygons(contours)
+            # TODO: Check whether it works
+            final_contours, _ = HFinder_segmentation.find_fine_contours(mask, scale=3, canny=True, eps=0.3, min_perimeter=25)
+            yolo_polygons = HFinder_geometry.contours_to_yolo_polygons(final_contours)
  
             ch_key = ch + 1
             polygons_per_stacked_channel[ch_key].append((class_name, yolo_polygons))

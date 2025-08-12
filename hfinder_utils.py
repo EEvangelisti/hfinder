@@ -82,26 +82,18 @@ def write_yolo_yaml(class_ids):
         yaml.dump(data, f, default_flow_style=False, sort_keys=False)
 
 
-
-def save_yolo_segmentation_label(file_path, polygons, class_ids):
+def save_yolo_segmentation_label(file_path, annotations, class_ids):
     """
-    Writes YOLOv8-style segmentation labels to a .txt file, with one line per 
-    polygon, using normalized coordinates.
-
-    Parameters:
-        file_path (str): Path to the output label file.
-        polygons (list[tuple[str, list[tuple[float, float]]]]): List of tuples 
-        (class_name, polygon).
-        class_ids (dict[str, int]): Mapping from class names to YOLO integer IDs.
+    annotations : liste de (cls_name, polygons)
+                  où polygons = [ [x1,y1,...], [x1,y1,...], ... ] (déjà normalisés)
     """
     with open(file_path, "w") as f:
-        for class_name, poly in polygons:
-            if class_name not in class_ids:
+        for cls_name, polygons in annotations:
+            cls_id = class_ids.get(cls_name)
+            if cls_id is None:
                 continue
-            class_id = class_ids[class_name]
-            poly = [coord for point in poly for coord in point]
-            line = [str(class_id)] + [f"{x:.6f}" for x in poly]
-            f.write(" ".join(line) + "\n")
+            for flat in polygons:  # UNE LIGNE PAR POLYGONE
+                f.write(f"{cls_id} " + " ".join(f"{v:.6f}" for v in flat) + "\n")
 
 
 
