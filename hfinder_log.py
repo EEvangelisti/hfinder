@@ -33,3 +33,6 @@ def warn(msg):
 def fail(msg, exit_code=2):
     print(f"(HFinder) Failure: {msg}.")
     sys.exit(exit_code)
+    
+def assert_failure(cmd):
+    return f"(HFinder) Assert Failure: {cmd}"

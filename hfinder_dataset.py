@@ -37,7 +37,7 @@ import hfinder_log as HFinder_log
 import hfinder_utils as HFinder_utils
 import hfinder_folders as HFinder_folders
 import hfinder_palette as HFinder_palette
-import hfinder_classes as HFinder_classes
+import hfinder_imageinfo as HFinder_ImageInfo
 import hfinder_settings as HFinder_settings
 import hfinder_imageops as HFinder_ImageOps
 import hfinder_geometry as HFinder_geometry
@@ -47,7 +47,7 @@ import hfinder_segmentation as HFinder_segmentation
 
 
 
-def prepare_class_inputs(img_name, channels, n, c, ratio):
+def prepare_class_inputs(channels, n, c, ratio):
     """
     Generate segmentation masks and polygon annotations per class, for each 
     frame or image channel. This function applies either:
@@ -80,40 +80,40 @@ def prepare_class_inputs(img_name, channels, n, c, ratio):
     masks_dir = HFinder_folders.get_masks_dir()
     base = HFinder_settings.get("current_image.base")
 
-    for class_name, instr in HFinder_classes.get_items(img_name):
-        if instr == -1:
-            continue
+    for cls in HFinder_ImageInfo.get_current_classes():
     
-        ch = instr["channel"]
+        ch = HFinder_ImageInfo.get_channel(cls)
+        threshold = HFinder_ImageInfo.get_threshold(cls)
+        poly_json = HFinder_ImageInfo.get_manual_segmentation(cls)
 
-        if "threshold" in instr:
-            from_frame = HFinder_classes.from_frame(img_name, default=0)
-            to_frame = HFinder_classes.to_frame(img_name, default=n)
+        if threshold is not None:
+            from_frame = HFinder_ImageInfo.from_frame(cls, default=0)
+            to_frame = HFinder_ImageInfo.to_frame(cls, default=n)
             for i in range(from_frame, to_frame):
                 frame = i * c + ch
-                binary, polygons = HFinder_segmentation.channel_custom_threshold(channels[frame], instr["threshold"])
-                results[frame].append((class_name, polygons))
-                name = f"{base}_{class_name}_mask.png" if n == 1 \
-                       else f"{base}_frame{frame}_{class_name}_mask.png"
+                binary, polygons = HFinder_segmentation.channel_custom_threshold(channels[frame], threshold)
+                results[frame].append((cls, polygons))
+                name = f"{base}_{cls}_mask.png" if n == 1 \
+                       else f"{base}_frame{frame}_{cls}_mask.png"
                 binary_output = os.path.join(masks_dir, name)
                 plt.imsave(binary_output, binary, cmap='gray')
 
-        elif "segment" in instr:
+        elif poly_json is not None:
             if n > 1:
                 HFinder_log.fail("Applying user segmentation to Z-stacks has not been implemented yet")
-            json_path = os.path.join(HFinder_settings.get("tiff_dir"), instr["segment"])
+            json_path = os.path.join(HFinder_settings.get("tiff_dir"), poly_json)
             polygons = HFinder_segmentation.channel_custom_segment(json_path, ratio)
-            results[ch].append((class_name, polygons))
+            results[ch].append((cls, polygons))
 
         else:
-            from_frame = HFinder_classes.from_frame(img_name, default=0)
-            to_frame = HFinder_classes.to_frame(img_name, default=n)
+            from_frame = HFinder_ImageInfo.from_frame(cls, default=0)
+            to_frame = HFinder_ImageInfo.to_frame(cls, default=n)
             for i in range(from_frame, to_frame):
                 frame = i * c + ch
                 binary, polygons = HFinder_segmentation.channel_auto_threshold(channels[frame])
-                results[frame].append((class_name, polygons))
-                name = f"{base}_{class_name}_mask.png" if n == 1 \
-                       else f"{base}_frame{frame}_{class_name}_mask.png"
+                results[frame].append((cls, polygons))
+                name = f"{base}_{cls}_mask.png" if n == 1 \
+                       else f"{base}_frame{frame}_{cls}_mask.png"
                 binary_output = os.path.join(masks_dir, name)
                 plt.imsave(binary_output, binary, cmap='gray')
 
@@ -296,7 +296,7 @@ def max_intensity_projection_multichannel(img_name, base, stack, polygons_per_ch
         polygons_subset = [polygons_per_channel.get(idx, []) for idx in indices]
 
         # Pour chaque classe, construire un masque fusionné
-        allowed_items = [(x, y) for x, y in class_ids.items() if HFinder_classes.allows_MIP_generation(img_name, x)]
+        allowed_items = [(x, y) for x, y in class_ids.items() if HFinder_ImageInfo.allows_MIP_generation(img_name, x)]
         for class_name, class_id in allowed_items:
             # Collecte des polygones plats pour cette classe sur toutes les slices
             all_polys_px = []
@@ -326,7 +326,9 @@ def max_intensity_projection_multichannel(img_name, base, stack, polygons_per_ch
             cv2.imwrite(mask_path, mask)
 
             # Visu des contours sur la MIP du canal
-            contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+            contours, hierarchy = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+            # Use hierarchy to take holes into account!
+            # https://stackoverflow.com/questions/37160143/how-can-i-extract-internal-contours-holes-with-python-opencv
             yolo_polygons = HFinder_geometry.contours_to_yolo_polygons(contours)
  
             ch_key = ch + 1
@@ -355,15 +357,15 @@ def generate_training_dataset():
     
     class_ids = HFinder_utils.load_class_definitions()
     HFinder_utils.write_yolo_yaml(class_ids)
-    HFinder_classes.initialize()
+    HFinder_ImageInfo.initialize()
 
     for img_path in image_paths:
         img_name = os.path.basename(img_path)
-        HFinder_log.info(f"Processing {img_name}")
+        HFinder_ImageInfo.set_current_image(img_name)
         base = os.path.splitext(img_name)[0]
         HFinder_settings.set("current_image.base", base)
 
-        if not HFinder_classes.has_image(img_name):
+        if not HFinder_ImageInfo.image_has_instructions():
             HFinder_log.warn(f"Skipping file {img_name} - no annotations")
             continue
 
@@ -373,7 +375,7 @@ def generate_training_dataset():
             continue
 
         channels, ratio, (n, c) = HFinder_ImageOps.resize_multichannel_image(img)   
-        polygons_per_channel = prepare_class_inputs(img_name, channels, n, c, ratio)
+        polygons_per_channel = prepare_class_inputs(channels, n, c, ratio)
         generate_contours(base, polygons_per_channel, channels, class_ids)     
         generate_dataset(base, n, c, channels, polygons_per_channel)
 
