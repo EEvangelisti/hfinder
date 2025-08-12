@@ -99,7 +99,7 @@ def from_frame(image_file, default=0):
         return default
 
 
-
+# !!! Missing class
 def get_items(image_file):
     global CLASS_INSTRUCTIONS
     assert CLASS_INSTRUCTIONS is not None, "(HFinder) Assert Failure: get_items"    
@@ -109,6 +109,7 @@ def get_items(image_file):
         return {}.items()
 
 
+# !!! Missing class
 def to_frame(image_file, default=0):
     global CLASS_INSTRUCTIONS
     assert CLASS_INSTRUCTIONS is not None, "(HFinder) Assert Failure: to_frame"

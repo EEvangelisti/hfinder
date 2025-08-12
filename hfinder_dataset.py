@@ -80,7 +80,7 @@ def prepare_class_inputs(channels, n, c, ratio):
     masks_dir = HFinder_folders.get_masks_dir()
     base = HFinder_settings.get("current_image.base")
 
-    for cls in HFinder_ImageInfo.get_current_classes():
+    for cls in HFinder_ImageInfo.get_classes():
     
         ch = HFinder_ImageInfo.get_channel(cls)
         threshold = HFinder_ImageInfo.get_threshold(cls)
@@ -89,7 +89,7 @@ def prepare_class_inputs(channels, n, c, ratio):
         if threshold is not None:
             from_frame = HFinder_ImageInfo.from_frame(cls, default=0)
             to_frame = HFinder_ImageInfo.to_frame(cls, default=n)
-            for i in range(from_frame, to_frame):
+            for i in range(from_frame // c, to_frame // c + 1):
                 frame = i * c + ch
                 binary, polygons = HFinder_segmentation.channel_custom_threshold(channels[frame], threshold)
                 results[frame].append((cls, polygons))
@@ -108,7 +108,7 @@ def prepare_class_inputs(channels, n, c, ratio):
         else:
             from_frame = HFinder_ImageInfo.from_frame(cls, default=0)
             to_frame = HFinder_ImageInfo.to_frame(cls, default=n)
-            for i in range(from_frame, to_frame):
+            for i in range(from_frame // c, to_frame // c + 1):
                 frame = i * c + ch
                 binary, polygons = HFinder_segmentation.channel_auto_threshold(channels[frame])
                 results[frame].append((cls, polygons))
@@ -296,7 +296,7 @@ def max_intensity_projection_multichannel(img_name, base, stack, polygons_per_ch
         polygons_subset = [polygons_per_channel.get(idx, []) for idx in indices]
 
         # Pour chaque classe, construire un masque fusionné
-        allowed_items = [(x, y) for x, y in class_ids.items() if HFinder_ImageInfo.allows_MIP_generation(img_name, x)]
+        allowed_items = [(x, y) for x, y in class_ids.items() if HFinder_ImageInfo.allows_MIP_generation(x)]
         for class_name, class_id in allowed_items:
             # Collecte des polygones plats pour cette classe sur toutes les slices
             all_polys_px = []

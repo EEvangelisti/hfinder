@@ -69,7 +69,7 @@ def image_has_instructions():
 def from_frame(cls, default=0):
     try:
         x = int(get_current(cls)["from"])
-        return default if x <= 0 else x - 1
+        return default if x <= 0 else x 
     except:
         return default
 
@@ -77,17 +77,17 @@ def from_frame(cls, default=0):
 def to_frame(cls, default=0):
     try:
         x = int(get_current(cls)["to"])
-        return default if x <= 0 else x - 1
+        return default if x <= 0 else x 
     except:
         return default
 
 
 
-def get_current_classes():
+def get_classes():
     try:
         classes = CLASS_INSTRUCTIONS[CURRENT_IMAGE].keys()
-        [cls for cls in classes if get_current(cls) != -1]
-    else:
+        return [cls for cls in classes if get_current(cls) != -1]
+    except:
         return []
 
 
