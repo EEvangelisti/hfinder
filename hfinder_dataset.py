@@ -206,7 +206,6 @@ def generate_dataset(base, n, c, channels, polygons_per_channel):
     lbl_dir = HFinder_folders.get_label_train_dir()
 
     class_ids = HFinder_utils.load_class_definitions()
-    target_size = HFinder_settings.get("target_size")
 
     annotated_channels = {ch for ch, polys in polygons_per_channel.items() if polys}
     all_channels = set(channels.keys())
@@ -289,8 +288,8 @@ def max_intensity_projection_multichannel(img_name, base, stack, polygons_per_ch
         cv2.resize(mip[ch], (0, 0), fx=ratio, fy=ratio, interpolation=cv2.INTER_AREA)
         for ch in range(c)
     ]
-    w, h = HFinder_settings.get("target_size")
-    assert (stacked_channels[0].shape == (w, h))
+    size = HFinder_settings.get("size")
+    assert (stacked_channels[0].shape == (size, size))
 
     masks_dir = HFinder_folders.get_masks_dir()
     contours_dir = HFinder_folders.get_contours_dir()

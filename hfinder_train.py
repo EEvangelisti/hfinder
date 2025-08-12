@@ -41,7 +41,7 @@ def run(**kwargs):
         yolo.train(data=yaml,
                    project=HFinder_folders.get_runs_dir(),
                    epochs=epochs,
-                   imgsz=HFinder_settings.get("target_size")[0],
+                   imgsz=HFinder_settings.get("size"),
                    verbose=False,
                    **kwargs)
     finally:

@@ -491,7 +491,7 @@ def channel_custom_segment(json_path, ratio):
     with open(json_path, "r") as f:
         data = json.load(f)
 
-    w, h = HFinder_settings.get("target_size")
+    size = HFinder_settings.get("size")
 
     polygons = []
     for ann in data.get("annotations", []):
@@ -504,8 +504,7 @@ def channel_custom_segment(json_path, ratio):
                                  f"annotation id {ann.get('id')}")
                 continue
 
-            flat = [seg[i] * ratio / w if i % 2 == 0 else seg[i] * ratio / h 
-                    for i in range(len(seg))]
+            flat = [seg[i] * ratio / size for i in range(len(seg))]
             polygons.append(flat)
 
     return polygons

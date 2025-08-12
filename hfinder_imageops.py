@@ -38,29 +38,27 @@ def resize_multichannel_image(img):
 
     Args:
         img (np.ndarray): Input image of shape (C, H, W).
-        target_size (tuple): (height, width) desired.
 
     Returns:
         np.ndarray: Resized image of shape (C, target_height, target_width).
     """
 
-    target_size = HFinder_settings.get("target_size")
+    size = HFinder_settings.get("size")
  
     if img.ndim == 4:
         n, c, h, w = img.shape
     else:
         n = 1
         c, h, w = img.shape
-    resized = np.empty((n * c, *target_size), dtype=img.dtype)
+    resized = np.empty((n * c, *(size, size)), dtype=img.dtype)
     for n_i in range(n):
         for c_i in range(c):
             index = n_i * c + c_i
             frame = img[c_i] if n == 1 else img[n_i][c_i]
-            resized[index] = cv2.resize(frame, (target_size[1], target_size[0]), interpolation=cv2.INTER_LINEAR)
+            resized[index] = cv2.resize(frame, (size, size), interpolation=cv2.INTER_LINEAR)
 
-    ratios = tuple(x / w for x in target_size)
-    assert(ratios[0] == ratios[1]) # TODO: Remove this?
-    return {i + 1: resized[i] for i in range(n * c)}, ratios[0], (n, c)
+    ratio = size / w
+    return {i + 1: resized[i] for i in range(n * c)}, ratio, (n, c)
 
 
 
