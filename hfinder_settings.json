@@ -4,7 +4,7 @@
         "type": "str",
         "long": "tiff_dir",
         "default": "data",
-        "help": "folder containing training data"},
+        "help": "Path to the folder containing the training image files (TIFF format)."},
     "t": {
         "mode": "*",
         "type": "str",
@@ -31,32 +31,32 @@
         "help": "Enable watershed splitting of touching objects after binarization; helps separate merged instances."},
     "s" : {
         "mode": "train",
-        "type": "tuple",
-        "long": "target_size",
-        "default": "(640, 640)",
-        "help": "size of training images"},
+        "type": "int",
+        "long": "size",
+        "default": 640,
+        "help": "Target size (in pixels) for training images."},
     "e": {
         "mode": "train",
         "type": "int",
         "long": "epochs",
         "default": 100,
-        "help": "number of training epochs"},
+        "help": "Total number of complete training passes through the entire dataset."},
     "m": {
         "mode": "train",
         "type": "str",
         "long": "model",
         "default": "yolov8n-seg.pt",
-        "help": "YOLO model"},
+        "help": "Path to the YOLO model file to be used as the starting point for training (pretrained weights or a custom checkpoint)."},
     "b": {
         "mode": "*",
         "type": "bool",
         "long": "debug_mode",
         "default": 0,
-        "help": "switch on/off debug mode"},
+        "help": "Enable or disable debug mode to display additional logs and diagnostic information."},
     "v": {
         "mode": "train",
         "type": "float",
         "long": "validation_frac",
         "default": 0.2,
-        "help": "fraction used for validation"}
+        "help": "Fraction of the dataset to reserve for validation during training (value between 0 and 1)."}
 }
