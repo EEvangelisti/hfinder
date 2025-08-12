@@ -36,28 +36,6 @@ def contours_to_yolo_polygons_old(contours):
 
 
 
-def contours_to_yolo_polygons_info(contours):
-
-    print(f"Type global de contours: {type(contours)}")
-    try:
-        print(f"Nombre de contours: {len(contours)}")
-    except Exception as e:
-        print(f"Impossible de calculer len(contours) : {e}")
-
-    for i, contour in enumerate(contours):
-        print(f"\n--- Contour {i} ---")
-        print(f"Type: {type(contour)}")
-        try:
-            arr = np.asarray(contour)
-            print(f"np.asarray shape: {arr.shape}, dtype: {arr.dtype}, ndim: {arr.ndim}")
-            print(f"Premier élément brut: {contour[0] if len(contour) else 'vide'}")
-        except Exception as e:
-            print(f"Erreur conversion numpy: {e}")
-        print(f"Représentation brute: {repr(contour)[:300]}{'...' if len(repr(contour))>300 else ''}")
-
-    sys.exit("Fin debug_contours_info : inspection terminée.")
-
-
 
 def contours_to_yolo_polygons(contours,
                               min_vertices=3,
