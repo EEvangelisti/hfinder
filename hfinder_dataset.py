@@ -89,7 +89,7 @@ def prepare_class_inputs(channels, n, c, ratio):
         if threshold is not None:
             from_frame = HFinder_ImageInfo.from_frame(cls, default=0)
             to_frame = HFinder_ImageInfo.to_frame(cls, default=n)
-            for i in range(from_frame // c, (to_frame - 1) // c + 1):
+            for i in range(from_frame // c, to_frame // c + 1):
                 frame = i * c + ch
                 binary, polygons = HFinder_segmentation.channel_custom_threshold(channels[frame], threshold)
                 results[frame].append((cls, polygons))
@@ -108,7 +108,7 @@ def prepare_class_inputs(channels, n, c, ratio):
         else:
             from_frame = HFinder_ImageInfo.from_frame(cls, default=0)
             to_frame = HFinder_ImageInfo.to_frame(cls, default=n)
-            for i in range(from_frame // c, (to_frame - 1) // c + 1):
+            for i in range(from_frame // c, to_frame // c + 1):
                 frame = i * c + ch
                 binary, polygons = HFinder_segmentation.channel_auto_threshold(channels[frame])
                 results[frame].append((cls, polygons))
