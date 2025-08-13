@@ -114,7 +114,7 @@ def create_tree(base, tree):
 
 
 def create_session_folders():
-"""
+    """
     Create a fresh, timestamped session directory with the standard layout.
 
     On completion, the global SESSION_TREE is populated with the nested folder
