@@ -106,7 +106,7 @@ def resize_multichannel_image(img):
 
 
 def colorize_with_hue(frame, hue):
-   """
+    """
     Apply a hue-based false coloring to a grayscale frame.
 
     The frame is normalized to [0, 1], then used as the V (value) channel in HSV,
