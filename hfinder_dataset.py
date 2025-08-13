@@ -152,7 +152,7 @@ def generate_contours(base, polygons_per_channel, channels, class_ids):
                 alpha = 0.3
                 overlay = cv2.addWeighted(overlay_copy, alpha, overlay, 1 - alpha, 0)
                 cv2.polylines(overlay, [pts], isClosed=True, color=color, thickness=1)
-                cv2.putText(overlay, class_name, (10, 20), cv2.FONT_HERSHEY_SIMPLEX, 0.5, color, 1)
+                cv2.putText(overlay, class_name, (10, 20), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255,255,255), 1)
 
         out_path = os.path.join(contours_dir, f"{base}_{ch_name}_contours.png")
         cv2.imwrite(out_path, overlay)
