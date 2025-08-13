@@ -144,7 +144,10 @@ def generate_contours(base, polygons_per_channel, channels, class_ids):
                     dtype=np.int32
                 ).reshape((-1, 1, 2))
 
-                color = tuple(random.randint(10, 255) for _ in range(3))
+                if HFinder_settings.get("publication"):
+                    color = (255, 0, 255)
+                else:
+                    color = tuple(random.randint(10, 255) for _ in range(3))
                 overlay_copy = overlay.copy()
                 # Fill polygon on the overlay copy
                 cv2.fillPoly(overlay_copy, [pts], color)
@@ -152,7 +155,9 @@ def generate_contours(base, polygons_per_channel, channels, class_ids):
                 alpha = 0.3
                 overlay = cv2.addWeighted(overlay_copy, alpha, overlay, 1 - alpha, 0)
                 cv2.polylines(overlay, [pts], isClosed=True, color=color, thickness=1)
-                cv2.putText(overlay, class_name, (10, 20), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255,255,255), 1)
+                if not HFinder_settings.get("publication"):
+                    white = (255, 255, 255)
+                    cv2.putText(overlay, class_name, (10, 20), cv2.FONT_HERSHEY_SIMPLEX, 0.5, white, 1)
 
         out_path = os.path.join(contours_dir, f"{base}_{ch_name}_contours.png")
         cv2.imwrite(out_path, overlay)

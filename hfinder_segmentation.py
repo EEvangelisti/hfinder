@@ -385,7 +385,9 @@ def auto_threshold_strategy(img, threshold):
     elif threshold == "otsu":
         thresh = skimage.filters.threshold_otsu(img)
     elif threshold == "yen":
-        thresh = skimage.filters.threshold_yen(img)   
+        thresh = skimage.filters.threshold_yen(img)
+    elif threshold == "mean":
+        thresh = skimage.filters.threshold_mean(img)  
     elif threshold == "triangle":
         thresh = skimage.filters.threshold_triangle(img)   
     elif threshold == "auto":

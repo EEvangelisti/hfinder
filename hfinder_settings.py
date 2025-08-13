@@ -21,16 +21,15 @@ with open("hfinder_settings.json", "r") as f:
 for key in list(SETTINGS.keys()):
     elt = SETTINGS[key]
 
-    py_type = locate(elt["type"])
+    py_type = locate(elt["type"]) if "type" in elt else bool
     elt["type"] = py_type
     if "long" in elt:
         SETTINGS[elt["long"]] = key
 
     if elt["type"] is tuple:
         elt["default"] = ast.literal_eval(elt["default"])
-    else:
+    elif "default" in elt:
         elt["default"] = py_type(elt["default"])
-
 
 
 def compatible_modes(actual, expected):
@@ -81,11 +80,16 @@ def define_arguments(parser, mode):
               compatible_modes(SETTINGS[x]["mode"], mode)}
 
     for cmd in subset.keys():
-        parser.add_argument(f"-{cmd}", f"--{SETTINGS[cmd]['long']}",
-                            type=SETTINGS[cmd]["type"],
-                            default=SETTINGS[cmd]["default"],
-                            help=f"{SETTINGS[cmd]['help']} (default: \
-                                 {SETTINGS[cmd]['default']})")
+        if "default" in SETTINGS[cmd]:
+            parser.add_argument(f"-{cmd}", f"--{SETTINGS[cmd]['long']}",
+                                type=SETTINGS[cmd]["type"],
+                                default=SETTINGS[cmd]["default"],
+                                help=f"{SETTINGS[cmd]['help']} (default: \
+                                     {SETTINGS[cmd]['default']})")
+        else:
+            parser.add_argument(f"-{cmd}", f"--{SETTINGS[cmd]['long']}",
+                                action="store_true",
+                                help=f"{SETTINGS[cmd]['help']}")
 
 
 

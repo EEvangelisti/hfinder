@@ -1,6 +1,6 @@
 {
     "d": {
-        "mode": "train",
+        "mode": "preprocess|train",
         "type": "str",
         "long": "tiff_dir",
         "default": "data",
@@ -29,6 +29,10 @@
         "long": "watershed",
         "default": 0,
         "help": "Enable watershed splitting of touching objects after binarization; helps separate merged instances."},
+    "pub" : {
+        "mode": "preprocess|train",
+        "long": "publication",
+        "help": "Print contours as in publication style."},
     "s" : {
         "mode": "train",
         "type": "int",
@@ -49,9 +53,7 @@
         "help": "Path to the YOLO model file to be used as the starting point for training (pretrained weights or a custom checkpoint)."},
     "b": {
         "mode": "*",
-        "type": "bool",
         "long": "debug_mode",
-        "default": 0,
         "help": "Enable or disable debug mode to display additional logs and diagnostic information."},
     "v": {
         "mode": "train",
