@@ -37,7 +37,7 @@ import sys
 #   2: Errors + warnings.
 #   3: Errors + warnings + info.
 # ----------------------------------------------------------------------
-VERBOSITY = 1
+VERBOSITY = 3
 
 # ----------------------------------------------------------------------
 # Standard exit codes for predictable program termination.
