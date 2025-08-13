@@ -20,8 +20,6 @@ Notes
 - Sub-sampling uses linearly spaced indices to preserve shape coverage.
 """
 
-import sys
-import math
 import numpy as np
 import hfinder_settings as HFinder_settings
 
