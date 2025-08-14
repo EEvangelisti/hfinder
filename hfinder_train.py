@@ -18,7 +18,9 @@ Notes
   the original file descriptors.
 """
 
+import gc
 import os
+import torch
 from ultralytics import YOLO
 import hfinder_log as HFinder_log
 import hfinder_utils as HFinder_utils
@@ -54,6 +56,20 @@ def run(**kwargs):
     # Redirect all output to a session log file.
     log_path = os.path.join(HFinder_folders.get_log_dir(), "train.log")
     stdout_fd, stderr_fd = HFinder_utils.redirect_all_output(log_path)
+    
+    # Free up memory
+    gc.collect()
+    if torch.cuda.is_available():
+        try:
+            torch.cuda.empty_cache()
+            # Reset peak stats (PyTorch ≥1.9). Fallback for older versions.
+            torch.cuda.reset_peak_memory_stats()
+        except Exception:
+            try:
+                torch.cuda.reset_max_memory_allocated()
+                torch.cuda.reset_max_memory_cached()
+            except Exception:
+                pass
     
     try:
         # Initialize model and launch training.       
