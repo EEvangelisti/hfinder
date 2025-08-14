@@ -368,7 +368,7 @@ def max_intensity_projection_multichannel(img_name, base, stack, polygons_per_ch
                         if not flat: 
                             continue
                         # Convert normalized flat polygon to pixel coordinates
-                        pts = HFinder_geometry.flat_to_pts_xy(flat, w, h)   # (N, 2)
+                        pts = HFinder_geometry.flat_to_pts_xy(flat)   # (N, 2)
                         if pts.shape[0] >= 3:
                             all_polys_px.append(pts)
 
@@ -385,7 +385,9 @@ def max_intensity_projection_multichannel(img_name, base, stack, polygons_per_ch
             cv2.imwrite(mask_path, mask)
 
             # Extract refined contours and convert to YOLO polygons
-            final_contours, _ = HFinder_segmentation.find_fine_contours(mask, scale=3, canny=True, eps=0.3, min_perimeter=25)
+            final_contours, _ = HFinder_segmentation.find_fine_contours(
+                mask, scale=3, canny=True, eps=0.3, min_perimeter=25
+            )
             yolo_polygons = HFinder_geometry.contours_to_yolo_polygons(final_contours)
  
             ch_key = ch + 1   # 1-based

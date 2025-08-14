@@ -10,7 +10,7 @@ Public API
 ----------
 - contours_to_yolo_polygons(contours, min_vertices=3, simplify_eps=None,
   max_points=None, as_flat=True): Convert contours to normalized polygons.
-- flat_to_pts_xy(flat, w, h): Convert a flat normalized polygon to pixel points.
+- flat_to_pts_xy(flat): Convert a flat normalized polygon to pixel points.
 
 Notes
 -----
@@ -117,7 +117,7 @@ def contours_to_yolo_polygons(contours,
 
 
 
-def flat_to_pts_xy(flat, w, h):
+def flat_to_pts_xy(flat):
     """
     Convert a flat normalized polygon to integer pixel coordinates.
 
@@ -133,5 +133,6 @@ def flat_to_pts_xy(flat, w, h):
     """
     assert len(flat) % 2 == 0, "Polygon length must be even."
     # Multiply normalized coords by width/height to get absolute pixels.
-    pts = [(int(flat[i] * w), int(flat[i+1] * h)) for i in range(0, len(flat), 2)]
+    r = HFinder_settings.get("size")
+    pts = [(int(flat[i] * r), int(flat[i+1] * r)) for i in range(0, len(flat), 2)]
     return np.asarray(pts, dtype=np.int32)
