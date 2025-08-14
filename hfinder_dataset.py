@@ -1,24 +1,37 @@
 """
-HFinder_dataset
+High-level dataset preparation for HFinder.
 
-This module provides high-level functions for preparing and managing training 
-datasets for the HFinder pipeline. It includes utilities to:
+Overview
+--------
+- Load per-image class instructions and resolve per-channel operations.
+- Threshold or segment channels to produce masks and polygons.
+- Convert masks/contours to YOLOv8-compatible polygon labels.
+- Compose RGB training images via hue-based fusion of channels.
+- Save images/labels to the expected YOLO directory layout.
+- Split images into train/val subsets.
+- Optionally compute and export MIP (Max Intensity Projection) datasets.
 
-- Load and interpret image-class mappings and annotation instructions.
-- Perform thresholding and segmentation on individual image channels.
-- Convert image masks or manual annotations into polygon representations.
-- Generate datasets in YOLOv8 format, including image-label pairs.
-- Split datasets into training and validation subsets.
-- Perform max intensity projections of multichannel stacks.
+Public API
+----------
+- prepare_class_inputs(channels, n, c, ratio)
+    Build per-frame annotations (polygons) from thresholds or JSON segmentations.
+- generate_contours(base, polygons_per_channel, channels, class_ids)
+    Render filled/outlined polygons as visual overlays for QA.
+- generate_dataset(base, n, c, channels, polygons_per_channel)
+    Create RGB composites and YOLO segmentation labels for training.
+- split_train_val()
+    Move a fraction of training images (and labels) to validation.
+- max_intensity_projection_multichannel(img_name, base, stack, polygons_per_channel, class_ids, n, c, ratio)
+    Produce a MIP per channel, aggregate polygons across Z, export overlays and dataset.
+- generate_training_dataset()
+    Orchestrate the full dataset generation flow from input TIFFs.
 
-These functions orchestrate the transformation of raw microscopy data into a 
-machine-learning-ready format for semantic segmentation tasks.
-
-Typical use cases include:
-    - Preparing training data from raw image stacks and JSON annotations.
-    - Exporting YOLO-compatible segmentation labels.
-    - Automating dataset generation for model training.
-
+Notes
+-----
+- Channel indexing is 1-based throughout (consistent with upstream modules).
+- Hue fusion uses deterministic palette rotation when hashing the filename,
+  enabling reproducible visuals.
+- JSON polygon application to Z-stacks is not implemented (explicit failure).
 """
 
 import os
@@ -49,32 +62,29 @@ import hfinder_segmentation as HFinder_segmentation
 
 def prepare_class_inputs(channels, n, c, ratio):
     """
-    Generate segmentation masks and polygon annotations per class, for each 
-    frame or image channel. This function applies either:
-      - custom pixel thresholding,
-      - automatic thresholding,
-      - or loads segmentation polygons from a JSON file (COCO-style),
-    depending on the user-defined `class_instructions` for each semantic class.
+    Generate segmentation masks and polygon annotations per class, for each
+    frame or image channel, based on class-specific directives.
 
-    Args:
-        channels (List[np.ndarray]): List of image channels, usually from a TIFF stack.
-        n (int): Number of Z-stack frames (or images).
-        c (int): Number of channels per frame.
-        class_instructions (dict): Mapping of class names to processing instructions. Each value is either:
-            - -1 (ignored class),
-            - dict with "channel" and optional "threshold" (float or pixel value),
-            - dict with "channel" and "segment" (path to JSON file).
-        ratio (float): Scaling factor used to normalize coordinates when loading polygons from segmentation.
+    For each class (from HFinder_ImageInfo):
+      - If a custom threshold is defined: threshold → mask → contours → polygons.
+      - Else if a manual segmentation JSON is provided: load polygons (scaled).
+      - Else: apply automatic thresholding → mask → contours → polygons.
 
-    Returns:
-        defaultdict[list]: A mapping from frame indices to lists of (class_name, polygons),
-                           where each polygon is a flattened list of normalized coordinates.
+    :param channels: Dict mapping 1-based channel/frame index → 2D image array.
+    :type channels: dict[int, np.ndarray]
+    :param n: Number of Z frames (1 if single plane).
+    :type n: int
+    :param c: Channels per Z frame.
+    :type c: int
+    :param ratio: Resize ratio (target_size / original_width) for polygon scaling.
+    :type ratio: float
+    :return: Map frame index → list of (class_name, [flat_polygons...]).
+    :rtype: collections.defaultdict[list]
 
-    Notes:
-        - Thresholding is applied using OpenCV to generate binary masks and extract contours.
-        - Resulting masks are saved as PNG files under `dataset/masks/`, named per class and frame.
-        - If `"segment"` is used, polygons are extracted from a JSON file and scaled accordingly.
-        - JSON segmentations are not supported for Z-stacks (`n > 1`); this raises a failure.
+    :notes:
+        - Masks are saved under dataset/masks/, per class/frame.
+        - JSON segmentations on Z-stacks (n > 1) fail with an explicit message.
+        - Flat polygons are lists like [x1, y1, ..., xn, yn], normalized to [0, 1].
     """
     results = defaultdict(list)
     masks_dir = HFinder_folders.get_masks_dir()
@@ -82,11 +92,13 @@ def prepare_class_inputs(channels, n, c, ratio):
 
     for cls in HFinder_ImageInfo.get_classes():
     
+        # Per-class directives
         ch = HFinder_ImageInfo.get_channel(cls)
         threshold = HFinder_ImageInfo.get_threshold(cls)
         poly_json = HFinder_ImageInfo.get_manual_segmentation(cls)
 
         if threshold is not None:
+            # Custom (fixed) thresholding across a frame range
             from_frame = HFinder_ImageInfo.from_frame(cls, default=0)
             to_frame = HFinder_ImageInfo.to_frame(cls, default=n)
             for i in range(from_frame // c, to_frame // c + 1):
@@ -99,6 +111,7 @@ def prepare_class_inputs(channels, n, c, ratio):
                 plt.imsave(binary_output, binary, cmap='gray')
 
         elif poly_json is not None:
+            # Load user-provided segmentation polygons (single-plane only)
             if n > 1:
                 HFinder_log.fail("Applying user segmentation to Z-stacks has not been implemented yet")
             json_path = os.path.join(HFinder_settings.get("tiff_dir"), poly_json)
@@ -106,6 +119,7 @@ def prepare_class_inputs(channels, n, c, ratio):
             results[ch].append((cls, polygons))
 
         else:
+            # Automatic thresholding as a fallback
             from_frame = HFinder_ImageInfo.from_frame(cls, default=0)
             to_frame = HFinder_ImageInfo.to_frame(cls, default=n)
             for i in range(from_frame // c, to_frame // c + 1):
@@ -122,6 +136,19 @@ def prepare_class_inputs(channels, n, c, ratio):
 
 
 def generate_contours(base, polygons_per_channel, channels, class_ids):
+    """
+    Draw filled/outlined polygons over grayscale channels and save overlays.
+
+    :param base: Base name used for output files.
+    :type base: str
+    :param polygons_per_channel: Map channel → [(class_name, [polys...]), ...].
+    :type polygons_per_channel: dict[int, list[tuple[str, list[list[float]]]]]
+    :param channels: Dict channel → 2D grayscale image.
+    :type channels: dict[int, np.ndarray]
+    :param class_ids: Class name → integer ID mapping (ignored here except for filtering).
+    :type class_ids: dict[str, int]
+    :rtype: None
+    """
     contours_dir = HFinder_folders.get_contours_dir()
 
     for ch_name, polygons in polygons_per_channel.items():
@@ -132,10 +159,9 @@ def generate_contours(base, polygons_per_channel, channels, class_ids):
         for class_name, poly in polygons:
             if class_name not in class_ids:
                 continue
-            class_id = class_ids[class_name]
 
             for poly in poly:
-                # poly is a flat list: [x1, y1, x2, y2, ..., xn, yn]
+                # Flat [x1, y1, ..., xn, yn]; ignore degenerate polygons
                 if len(poly) < 6:
                     continue  # ignore artifacts (tiny polygons)
 
@@ -144,20 +170,24 @@ def generate_contours(base, polygons_per_channel, channels, class_ids):
                     dtype=np.int32
                 ).reshape((-1, 1, 2))
 
+                # Choose color (fixed for publication, random for exploration)
                 if HFinder_settings.get("publication"):
                     color = (255, 0, 255)
                 else:
                     color = tuple(random.randint(10, 255) for _ in range(3))
+
                 overlay_copy = overlay.copy()
-                # Fill polygon on the overlay copy
+                # Fill on a copy
                 cv2.fillPoly(overlay_copy, [pts], color)
-                # Blend filled polygon into original overlay with alpha=0.3
                 alpha = 0.3
                 overlay = cv2.addWeighted(overlay_copy, alpha, overlay, 1 - alpha, 0)
                 cv2.polylines(overlay, [pts], isClosed=True, color=color, thickness=1)
                 if not HFinder_settings.get("publication"):
                     white = (255, 255, 255)
-                    cv2.putText(overlay, class_name, (10, 20), cv2.FONT_HERSHEY_SIMPLEX, 0.5, white, 1)
+                    cv2.putText(
+                        overlay, class_name, (10, 20),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.5, white, 1
+                    )
 
         out_path = os.path.join(contours_dir, f"{base}_{ch_name}_contours.png")
         cv2.imwrite(out_path, overlay)
@@ -166,47 +196,26 @@ def generate_contours(base, polygons_per_channel, channels, class_ids):
 
 def generate_dataset(base, n, c, channels, polygons_per_channel):
     """
-    Generates training data for YOLO-based segmentation by fusing image channels
-    into RGB composites and assigning segmentation masks based on annotated 
-    polygon data.
+    Compose RGB training images via hue fusion and export YOLO segmentation labels.
 
-    Parameters:
-        base (str): Base filename used to construct output image and label names.
-        n (int): Number of spatial/Z positions (frames) to combine per training example.
-        c (int): Number of channels per spatial position.
-        channels (dict[int → np.ndarray]): Dictionary mapping channel indices 
-        to grayscale image arrays.
-        polygons_per_channel (dict[int → list[tuple]]): Maps channel indices to 
-        lists of (class_name, polygon) tuples representing instance segmentations.
+    For each combination of annotated channels (per Z-frame if applicable):
+      - Sample optional "noise" channels (never annotated ones; same Z-frame for n>1).
+      - Compose a hue-fused RGB image (selected+noise).
+      - Save image as JPEG under dataset/images/train/.
+      - Export YOLO polygon labels if any annotated polygons exist for the combo.
 
-    Functionality:
-        Iterates over all valid combinations (combo) of n spatial positions 
-        and c channels among annotated channels. For each combination:
-            - Excludes all annotated channels from the pool of possible "noise" 
-              channels (non-annotated distractors).
-            - Restricts possible noise channels to the same Z/t position as the 
-              combo if n > 1.
-            - Randomly adds zero or more noise channels to the input image.
-            - Composes a pseudo-RGB image using a hue-fusion strategy based on 
-              the combo and noise channels.
-            - Saves the resulting image as a .jpg file in the YOLO 
-              "train/images" folder.
-            - If polygons are available for any of the combo channels, it
-              generates and saves a YOLO-format .txt segmentation label.
-
-    Strict separation between annotated and noise channels ensures no meaningful
-    biological signal appears without its corresponding annotation — a crucial 
-    constraint to prevent inconsistencies during training. The approach supports
-    multiple Z/t frames per sample (via n > 1) and random noise injection for
-    data augmentation. Uses deterministic random color palettes (via hashing) 
-    for consistent hue fusion in debug or reproducibility scenarios.
-
-    Outputs:
-        JPEG images and corresponding YOLO segmentation labels, saved under:
-        dataset/images/train/
-        dataset/labels/train/
+    :param base: Base filename for images/labels.
+    :type base: str
+    :param n: Number of Z frames (1 if single plane).
+    :type n: int
+    :param c: Channels per Z frame.
+    :type c: int
+    :param channels: Dict channel → 2D grayscale image.
+    :type channels: dict[int, np.ndarray]
+    :param polygons_per_channel: Dict channel → [(class_name, [polys...]), ...].
+    :type polygons_per_channel: dict[int, list[tuple[str, list[list[float]]]]]
+    :rtype: None
     """
-    train_dir = os.path.join("dataset", "{}", "train")
     img_dir = HFinder_folders.get_image_train_dir()
     lbl_dir = HFinder_folders.get_label_train_dir()
 
@@ -219,22 +228,21 @@ def generate_dataset(base, n, c, channels, polygons_per_channel):
         print(f"polygons_per_channel.keys() = {polygons_per_channel.keys()}, \
                 list(annotated_channels) = {list(annotated_channels)}")
 
+    # Iterate over valid channel combinations (per Z-frame if n>1)
     for combo in HFinder_utils.power_set(annotated_channels, n, c):
         filename = f"{os.path.splitext(base)[0]}_" + "_".join(map(str, combo)) + ".jpg"
         
-        # Any channel containing annotations must never be used as background 
-        # noise, even when not selected for the current input combination. This 
-        # avoids showing biologically meaningful signal without its associated 
-        # mask, which would create inconsistency during training.
+        # Never use annotated channels as noise (even if not in the current combo)
         noise_candidates = list(all_channels - set(annotated_channels) - set(combo))
 
         if n > 1:
-            # We can only select channels at the same Z/t level than combo.
+            # Restrict noise to the Z-frame of the combo reference channel
             ref_ch = min(combo)
             series_index = (ref_ch - 1) // c
             allowed_noise = [series_index * c + i + 1 for i in range(c)]
             noise_candidates = list(set(noise_candidates) & set(allowed_noise))
 
+        # Sample 0..len(noise_candidates) noise channels
         num_noise = np.random.randint(0, len(noise_candidates) + 1)
         noise_channels = random.sample(noise_candidates, num_noise) if num_noise > 0 else []
 
@@ -243,11 +251,15 @@ def generate_dataset(base, n, c, channels, polygons_per_channel):
                     noise_channels = {noise_channels}, \
                     noise_candidates = {noise_candidates}")
 
+        # Compose hue-fused RGB and save
         palette = HFinder_palette.get_random_palette(hash_data=filename)
-        img_rgb = HFinder_ImageOps.compose_hue_fusion(channels, combo, palette, noise_channels=noise_channels)
+        img_rgb = HFinder_ImageOps.compose_hue_fusion(
+            channels, combo, palette, noise_channels=noise_channels
+        )
         img_path = os.path.join(img_dir, filename)
         Image.fromarray(img_rgb).save(img_path, "JPEG")
 
+        # Flatten annotations for the selected channels and write YOLO labels.
         annotations = list(chain.from_iterable(polygons_per_channel.get(ch, []) for ch in combo))
         if annotations:
             label_path = os.path.join(lbl_dir, os.path.splitext(filename)[0] + ".txt")
@@ -257,9 +269,12 @@ def generate_dataset(base, n, c, channels, polygons_per_channel):
 
 def split_train_val():
     """
-    Splits the dataset into training and validation sets. This function moves 
-    (1 - percent) of the images from the training directory to the validation 
-    directory, along with their corresponding label files.
+    Split images/labels into training and validation subsets.
+
+    Moves a fraction of images (and their labels) from train → val according
+    to `validation_frac` in settings.
+
+    :rtype: None
     """
     img_dir = HFinder_folders.get_image_train_dir()
     lbl_dir = HFinder_folders.get_label_train_dir()
@@ -288,7 +303,38 @@ def split_train_val():
 
 
 def max_intensity_projection_multichannel(img_name, base, stack, polygons_per_channel, class_ids, n, c, ratio):
-    mip = np.max(stack, axis=0)
+    """
+    Build a Max Intensity Projection (MIP) across Z and export a mini-dataset.
+
+    Steps per channel index 0..c-1:
+      - Compute the MIP across n frames → resize to target size.
+      - Aggregate polygons across all Z-slices for each class.
+      - Fill a global mask per class and convert to YOLO polygons.
+      - Save masks and overlays; export a small MIP-based dataset.
+
+    :param img_name: Original image filename (for bookkeeping).
+    :type img_name: str
+    :param base: Base name for outputs (suffix "_MIP" is added).
+    :type base: str
+    :param stack: Original image stack (ndarray with Z).
+    :type stack: np.ndarray
+    :param polygons_per_channel: Dict channel_idx → [(class_name, [polys...]), ...].
+    :type polygons_per_channel: dict[int, list[tuple[str, list[list[float]]]]]
+    :param class_ids: Mapping class name → ID.
+    :type class_ids: dict[str, int]
+    :param n: Number of Z frames.
+    :type n: int
+    :param c: Channels per frame.
+    :type c: int
+    :param ratio: Resize factor used elsewhere (kept for parity).
+    :type ratio: float
+    :rtype: None
+
+    :notes:
+        - This routine assumes square targets (size × size).
+        - It aggregates instance polygons across Z before re-vectorizing.
+    """
+    mip = np.max(stack, axis=0)   # shape: (C, H, W)
     stacked_channels = [
         cv2.resize(mip[ch], (0, 0), fx=ratio, fy=ratio, interpolation=cv2.INTER_AREA)
         for ch in range(c)
@@ -299,18 +345,19 @@ def max_intensity_projection_multichannel(img_name, base, stack, polygons_per_ch
     masks_dir = HFinder_folders.get_masks_dir()
     contours_dir = HFinder_folders.get_contours_dir()
 
-    # Pour chaque canal de la MIP, on fusionne tous les polygones de ce canal à travers Z
+    # For each channel of the MIP, merge polygons from all Z-slices
     polygons_per_stacked_channel = defaultdict(list)
     for ch in range(c):
-        # indices (1-based) des frames correspondant à ce canal à travers les n plans
+        # 1-based indices of frames for this channel across Z: 1, 1+c, 1+2c, ...
         indices = [j + 1 for j in range(ch, n * c, c)]  # 1, 1+c, 1+2c, ...
-        # polygons_per_channel[idx] est une liste de tuples (class_name, [poly1, poly2, ...])
+        
+        # Collect per-slice polygons for the channel: [(label, [polys...]), ...]
         polygons_subset = [polygons_per_channel.get(idx, []) for idx in indices]
 
-        # Pour chaque classe, construire un masque fusionné
+        # Build a fused mask per class from all Z-slice polygons
         allowed_items = [(x, y) for x, y in class_ids.items() if HFinder_ImageInfo.allows_MIP_generation(x)]
         for class_name, class_id in allowed_items:
-            # Collecte des polygones plats pour cette classe sur toutes les slices
+            # Accumulate polygons (pixel coords) for this class across slices
             all_polys_px = []
             for per_slice in polygons_subset:
                 for label, polys_list in per_slice:
@@ -320,30 +367,31 @@ def max_intensity_projection_multichannel(img_name, base, stack, polygons_per_ch
                     for flat in polys_list:
                         if not flat: 
                             continue
-                        pts = HFinder_geometry.flat_to_pts_xy(flat, w, h) # (N,2)
-                        # OpenCV accepte (N,2) ou (N,1,2); (N,2) suffit pour fillPoly
+                        # Convert normalized flat polygon to pixel coordinates
+                        pts = HFinder_geometry.flat_to_pts_xy(flat, w, h)   # (N, 2)
                         if pts.shape[0] >= 3:
                             all_polys_px.append(pts)
 
-            # Si rien pour cette classe → passer
+            # If nothing accumulated, skip this class/channel
             if not all_polys_px:
                 continue
 
-            # Masque fusionné
+            # Fused binary mask for the class on the MIP channel
             mask = np.zeros((h, w), dtype=np.uint8)
             cv2.fillPoly(mask, all_polys_px, 255)
 
-            # Sauvegarde du masque
+            # Persist the fused class mask (for QA or reuse)
             mask_path = os.path.join(masks_dir, f"{base}_MIP_{class_name}_mask.png")
             cv2.imwrite(mask_path, mask)
 
-            # TODO: Check whether it works
+            # Extract refined contours and convert to YOLO polygons
             final_contours, _ = HFinder_segmentation.find_fine_contours(mask, scale=3, canny=True, eps=0.3, min_perimeter=25)
             yolo_polygons = HFinder_geometry.contours_to_yolo_polygons(final_contours)
  
-            ch_key = ch + 1
+            ch_key = ch + 1   # 1-based
             polygons_per_stacked_channel[ch_key].append((class_name, yolo_polygons))
 
+    # Compose overlays and export a small MIP dataset
     stacked_channels_dict = {i+1: stacked_channels[i] for i in range(c)}
     generate_contours(
         base + "_MIP",
@@ -362,6 +410,21 @@ def max_intensity_projection_multichannel(img_name, base, stack, polygons_per_ch
 
 
 def generate_training_dataset():
+    """
+    End-to-end dataset generation from a folder of TIFFs.
+
+    Steps:
+      - Discover input images under `tiff_dir`.
+      - Initialize class instructions and write dataset YAML.
+      - For each image:
+          * Validate shape; resize/stack channels.
+          * Create class-specific masks/annotations.
+          * Save overlays and fused RGB training examples (+ labels).
+          * Optionally export MIP-based dataset if multiple Z-frames.
+      - Finally split train/val per `validation_frac`.
+
+    :rtype: None
+    """
     data_dir = HFinder_settings.get("tiff_dir")
     image_paths = sorted(glob(os.path.join(data_dir, "*.tif")))
     
@@ -384,12 +447,20 @@ def generate_training_dataset():
             HFinder_log.warn(f"Skipping file {img_name}, wrong shape {img.shape}")
             continue
 
+        # Resize channels to the configured size; get ratio and (n, c)
         channels, ratio, (n, c) = HFinder_ImageOps.resize_multichannel_image(img)   
         polygons_per_channel = prepare_class_inputs(channels, n, c, ratio)
+        
+        # QA overlays then dataset generation
         generate_contours(base, polygons_per_channel, channels, class_ids)     
         generate_dataset(base, n, c, channels, polygons_per_channel)
 
+        # Optional MIP export when multiple Z-slices exist
         if n > 1:
-            max_intensity_projection_multichannel(img_name, base, img, polygons_per_channel, class_ids, n, c, ratio)
+            max_intensity_projection_multichannel(
+                img_name, base, img, polygons_per_channel,
+                class_ids, n, c, ratio
+            )
 
+    # Split train/val at the end so both single-plane and MIP outputs are included
     split_train_val()
