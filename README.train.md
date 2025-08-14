@@ -1,10 +1,10 @@
-## Creating a training dataset 
+# Generating YOLO-Compatible Training Data with HFinder
 
 <p align=center>
 <img src="doc/Training-dataset.png"/>
 </p>
 
-# Introduction
+## Introduction
 
 Creating accurate and consistent training datasets is a critical step in 
 developing effective object detection models. While it is possible to ask human 
@@ -45,8 +45,7 @@ dataset generation, minimizes human intervention, and lays the groundwork for
 producing high-performance object detectors with consistent, reproducible 
 annotations.
 
-
-# Generating YOLO-Compatible Training Data with HFinder
+---
 
 HFinder streamlines the preparation of YOLO-compatible datasets from microscopy 
 images in **TIFF** format. It supports both **single-frame images** and 
@@ -54,8 +53,6 @@ images in **TIFF** format. It supports both **single-frame images** and
 wide range of acquisition protocols. The tool can automatically create 
 segmentation masks from raw channels, convert them into polygons, and export 
 both images and annotations ready for YOLO training.
-
----
 
 ## Step 1 — Prepare Your TIFF Images
 
