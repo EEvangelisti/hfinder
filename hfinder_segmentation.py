@@ -21,7 +21,6 @@ Public API
 - split_touching_watershed(binary): Watershed instance splitting → contours.
 - filter_contours_min_area(contours): Keep contours above min area.
 - simplify_contours(contours, epsilon=0.5): RDP polygon simplification.
-- find_contours(mask): Convenience wrapper returning polygons from a mask.
 - auto_threshold_strategy(img, threshold): Apply named threshold + cleanup.
 - channel_custom_threshold(channel, threshold): One channel → (mask, yolo_polygons).
 - channel_auto_threshold(channel): Use default threshold from settings.
