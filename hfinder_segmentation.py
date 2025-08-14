@@ -1,30 +1,43 @@
 """
-hfinder_segmentation
 Label-generation helpers for confocal images (dark background, grayscale).
 
-Design choices
---------------
-- 8-bit discipline: inputs are expected as uint8 [0–255]; conversions are 
-  centralized in `to_uint8` / `to_bool`.
-- Global thresholding via scikit-image or numeric value; `auto` selects Otsu or
-  Triangle based on skewness.
-- Morphological cleanup: remove small objects, then fill small holes + optional
-  binary closing (`radius` in pixels).
-- Optional instance splitting: watershed on the distance transform; seed density
-  controlled by `min_distance`.
-- Contour extraction: external contours with OpenCV; optional RDP simplification
-  to cap vertex count.
-- Area guard: discard contours smaller than `min_area_px`; no max-area by
-  default (hyphae may be large).
-- Outputs: uint8 masks (0/255) and YOLO-normalized polygons; intended for label
-  creation, not model preprocessing.
+Overview
+--------
+- Enforce 8-bit discipline (0–255) with explicit conversion helpers.
+- Threshold (named methods or numeric) → clean up → (optional) watershed split.
+- Extract external contours and (optionally) simplify them.
+- Convert masks/contours into YOLO-normalized polygons.
+- Load COCO-style polygons and normalize to YOLO format.
+
+Public API
+----------
+- mask_to_polygons(mask, mode="subtract_holes", ...): Binary mask → polygons (with/without holes).
+- is_bool(image): Check if an array is boolean.
+- to_bool(image): Convert array to boolean mask.
+- to_uint8(image): Convert array to uint8 [0, 255].
+- fill_gaps(binary, area_threshold=50, radius=1, connectivity=2): Fill holes + optional closing.
+- remove_noise(binary, min_size=20, connectivity=2): Remove small components.
+- noise_and_gaps(img): remove_noise ∘ fill_gaps, returns uint8 mask.
+- split_touching_watershed(binary): Watershed instance splitting → contours.
+- filter_contours_min_area(contours): Keep contours above min area.
+- simplify_contours(contours, epsilon=0.5): RDP polygon simplification.
+- find_contours(mask): Convenience wrapper returning polygons from a mask.
+- auto_threshold_strategy(img, threshold): Apply named threshold + cleanup.
+- channel_custom_threshold(channel, threshold): One channel → (mask, yolo_polygons).
+- channel_auto_threshold(channel): Use default threshold from settings.
+- channel_custom_segment(json_path, ratio): Load/normalize COCO polygons to YOLO.
+
+Notes
+-----
+- Images are treated as uint8 unless explicitly stated; call `to_uint8` as needed.
+- Areas/epsilons are in **pixels**.
+- Returned YOLO polygons are **flattened, normalized** lists [x1, y1, ..., xn, yn] with
+  coordinates in [0, 1] relative to the (square) target size from settings.
 
 Rationale
 ---------
-- Keep annotations faithful to raw signal; use deterministic defaults and 
-  dataset-level settings.
-- Favor simple, reproducible steps that survive export changes and microscope
-  sessions.
+- Keep annotation steps deterministic and dataset-portable.
+- Prefer simple, robust morphology + optional watershed for hard merges.
 """
 
 import os
@@ -44,7 +57,6 @@ import hfinder_settings as HFinder_settings
 import hfinder_geometry as HFinder_geometry
 
 
-# ----------------
 
 def mask_to_polygons(mask,
                      mode: str = "subtract_holes",
@@ -54,14 +66,37 @@ def mask_to_polygons(mask,
                      simplify_max: float = 0.3,
                      min_vertices: int = 3):
     """
-    Convertit un masque binaire (0/255) en polygones.
-    :param mode: "subtract_holes" (plein) ou "rings" (avec trous).
-    :return: list[list[np.ndarray]] si mode="rings" (ext + trous),
-             sinon list[np.ndarray] pour "subtract_holes".
+    Convert a binary mask (0/255) to polygons, with optional hole retention.
+
+    Modes:
+      - "subtract_holes": fill externals then subtract internal holes → one polygon per region.
+      - "rings": keep explicit rings per region: [outer, hole1, hole2, ...].
+
+    Simplification:
+      - Uses Ramer–Douglas–Peucker via `cv2.approxPolyDP` with an epsilon that
+        scales with perimeter: `eps = clip(simplify_rel * perimeter, simplify_min, simplify_max)`.
+
+    :param mask: Binary image with foreground as nonzero (uint8 recommended).
+    :type mask: np.ndarray
+    :param mode: "subtract_holes" or "rings".
+    :type mode: str
+    :param min_area: Minimum area (pixels) to keep a contour/hole.
+    :type min_area: float
+    :param simplify_rel: Relative epsilon fraction of perimeter.
+    :type simplify_rel: float
+    :param simplify_min: Minimum absolute epsilon (px).
+    :type simplify_min: float
+    :param simplify_max: Maximum absolute epsilon (px).
+    :type simplify_max: float
+    :param min_vertices: Discard polygons with fewer vertices.
+    :type min_vertices: int
+    :return: If mode="rings": list of regions, each [outer, hole1, ...] (np.int32).
+             Else: list of polygons (np.int32).
+    :rtype: list[list[np.ndarray]] | list[np.ndarray]
     """
     m = (mask > 0).astype(np.uint8) * 255
 
-    # Récupère contours + hiérarchie
+    # Extract contours with 2-level hierarchy (externals + holes)
     contours, hier = cv2.findContours(m, cv2.RETR_CCOMP, cv2.CHAIN_APPROX_NONE)
     if hier is None:
         return [] if mode == "subtract_holes" else []
@@ -70,12 +105,13 @@ def mask_to_polygons(mask,
     h, w = m.shape[:2]
 
     def _simplify(c):
+        # Perimeter-aware epsilon (bounded)
         L = cv2.arcLength(c, True)
-        eps = np.clip(simplify_rel * L, simplify_min, simplify_max)  # borne haute
+        eps = np.clip(simplify_rel * L, simplify_min, simplify_max)
         return cv2.approxPolyDP(c, eps, True)
 
     if mode == "rings":
-        # Conserve anneaux : liste de [outer, hole1, hole2, ...] par région
+        # Keep rings explicitly: one entry per region [outer, hole1, ...]
         regions = []
         for i, c in enumerate(contours):
             # parent == -1 → contour externe
@@ -87,7 +123,7 @@ def mask_to_polygons(mask,
             if len(outer) < min_vertices:
                 continue
 
-            # enfants = trous
+            # Children = holes
             holes = []
             ch = H[i][2]
             while ch != -1:
@@ -101,7 +137,7 @@ def mask_to_polygons(mask,
         return regions
 
     else:  # "subtract_holes"
-        # Dessine externes pleins puis efface les trous → un seul contour par région
+        # Draw externals filled, then erase holes → one filled region per object
         filled = np.zeros_like(m)
         for i, c in enumerate(contours):
             if H[i][3] == -1 and cv2.contourArea(c) >= min_area:
@@ -121,11 +157,6 @@ def mask_to_polygons(mask,
             if len(c) >= min_vertices:
                 polys.append(c.astype(np.int32))
         return polys
-
-# ----------------
-
-
-
 
 
 
@@ -148,8 +179,8 @@ def to_bool(image):
 
     Rules:
         - If the array is already boolean, it is returned as-is.
-        - Otherwise, strictly positive values are mapped to True (foreground),
-          and zeros/negatives to False (background).
+        - Otherwise, strictly positive values map to True (foreground),
+          zeros/negatives to False (background).
 
     :param image: Input array (bool, uint8 0/255, float, etc.).
     :type image: np.ndarray
@@ -167,8 +198,7 @@ def to_uint8(image):
     Notes:
         - bool → {False, True} maps to {0, 255}
         - float in [0, 1] → rescaled to [0, 255]
-        - other numeric dtypes are handled per scikit-image conversion rules
-          (values may be scaled/clipped accordingly)
+        - other numeric dtypes follow scikit-image conversion rules
 
     :param image: Input array.
     :type image: np.ndarray
@@ -198,7 +228,7 @@ def fill_gaps(binary, area_threshold=50, radius=1, connectivity=2):
     :param connectivity: Pixel connectivity for hole filling (2 → 8-connectivity in 2D).
     :type connectivity: int
     :returns: Boolean mask with small holes filled and (optionally) smoothed by closing.
-    :retype: np.ndarray
+    :rtype: np.ndarray
     :raises AssertionError: If ``binary`` is not boolean.
     """
     assert is_bool(binary), "(HFinder) Assert Failure: fill_gaps"
@@ -211,12 +241,10 @@ def fill_gaps(binary, area_threshold=50, radius=1, connectivity=2):
 
 
 
-# TODO: Alternative methods we should consider in the future:
-# For example, we could define an option to choose which noise removal
-# function to use.
-# disk1 = skimage.morphology.disk(1)
-# clean = skimage.morphology.opening(mask_bool, footprint=disk1)
-# clean = skimage.filters.median(mask_bool, footprint=disk1).astype(bool)
+# Alternative ideas to consider later:
+#   disk1 = skimage.morphology.disk(1)
+#   clean = skimage.morphology.opening(mask_bool, footprint=disk1)
+#   clean = skimage.filters.median(mask_bool, footprint=disk1).astype(bool)
 def remove_noise(binary, min_size=20, connectivity=2):
     """
     Remove small white connected components (“speckles”) by minimum area.
@@ -271,7 +299,7 @@ def split_touching_watershed(binary):
     :param binary: Binary mask (nonzero = foreground). Boolean is recommended.
     :type binary: np.ndarray
     :returns: List of OpenCV contours, each as an ``(N, 1, 2)`` integer array.
-    :retype: list[np.ndarray]
+    :rtype: list[np.ndarray]
     :notes: Uses a peak detector on the distance map (``peak_local_max``) to
             control seed separation via ``min_distance``.
     """
@@ -286,6 +314,8 @@ def split_touching_watershed(binary):
     markers = scipy.ndimage.label(peaks)[0]
     labels = skimage.segmentation.watershed(-dist, markers, mask=binary)
     labels = np.asarray(labels)
+    
+    # Extract an external contour for each instance
     contours = []
     for lab in range(1, int(labels.max()) + 1):
         m = (labels == lab).astype(np.uint8) * 255
@@ -301,13 +331,16 @@ def filter_contours_min_area(contours):
     :param contours: OpenCV contours as returned by ``cv2.findContours``.
     :type contours: list[np.ndarray]
     :returns: Subset of contours with area >= ``HFinder_settings.get("min_area_px")``.
-    :retype: list[np.ndarray]
+    :rtype: list[np.ndarray]
     """
     min_area_px = HFinder_settings.get("min_area_px")
     return [c for c in contours if cv2.contourArea(c) >= float(min_area_px)]
 
 
 
+# Ramer–Douglas–Peucker algorithm.
+# Note: min_area_px ≈ π * (d_min / (2*s))**2 if we know the minimum object 
+# diameter d_min (in µm) and pixel size s (in µm/px).
 def simplify_contours(contours, epsilon=0.5):
     """
     Simplify contours with the Ramer–Douglas–Peucker algorithm.
@@ -317,33 +350,11 @@ def simplify_contours(contours, epsilon=0.5):
     :param epsilon: Approximation tolerance in pixels (0.5–2.0 px typical).
     :type epsilon: float
     :returns: Simplified contours (closed polygons preserved).
-    :retype: list[np.ndarray]
+    :rtype: list[np.ndarray]
     :notes: Uses ``cv2.approxPolyDP(contour, epsilon, True)``.
     """
     return [cv2.approxPolyDP(c, epsilon, True) for c in contours]
 
-
-
-# Ramer–Douglas–Peucker algorithm.
-# Note: min_area_px ≈ π * (d_min / (2*s))**2 if we know the minimum object 
-# diameter d_min (in µm) and pixel size s (in µm/px).
-# Since OpenCV 3.2, findContours() no longer modifies the source image but 
-# returns a modified image as the first of three return parameters.
-def find_contours(mask):
-    """
-    Find external contours in a binary mask using OpenCV.
-
-    :param binary: Binary image (uint8, values in {0, 255}). Convert with
-                   ``to_uint8`` if the input is boolean.
-    :type binary: np.ndarray
-    :returns: External contours as ``(N, 1, 2)`` integer arrays.
-    :retype: list[np.ndarray]
-    :notes: In OpenCV ≥ 3.2 the source image is not modified by
-            ``cv2.findContours``; for older versions the function used to
-            alter the input and returned three values.
-    """
-    polygons = mask_to_polygons(mask, mode="subtract_holes")
-    return polygons
 
 
 def auto_threshold_strategy(img, threshold):
@@ -351,13 +362,12 @@ def auto_threshold_strategy(img, threshold):
     Apply a named thresholding method (scikit-image) and return the cleaned mask.
 
     Supported methods:
-        - "isodata", "li", "otsu", "yen", "triangle"
+        - "isodata", "li", "otsu", "yen", "triangle", "mean"
         - "auto": heuristic based on skewness:
           if (mean - median) / (max + 1e-5) > 0.15 → "triangle", else "otsu".
 
     Post-processing:
-        The binary mask (``img > thresh``) is cleaned via ``noise_and_gaps``
-        before being returned.
+        The binary mask (``img > thresh``) is cleaned via ``noise_and_gaps`` before return.
 
     :param img: Grayscale image (must be uint8).
     :type img: np.ndarray
@@ -369,6 +379,7 @@ def auto_threshold_strategy(img, threshold):
     """
     assert img.dtype == np.uint8, "(HFinder) Assert Failure: auto_threshold_strategy"
     
+    # Optional: exhaustive threshold exploration for debugging/papers
     if False: # FIXME: Insert this with an option
         base = HFinder_settings.get("current_image.base")
         fig, _ = skimage.filters.try_all_threshold(img)
@@ -410,15 +421,13 @@ def channel_custom_threshold(channel, threshold):
     Threshold a single channel and extract YOLO-style polygons.
 
     Behavior:
-        - If ``threshold`` is a string, use ``auto_threshold_strategy`` and
-          post-process via ``noise_and_gaps``.
+        - If ``threshold`` is a string, use ``auto_threshold_strategy`` and post-process.
         - If ``threshold`` is numeric:
             * ``threshold`` < 1 → percentile (e.g., 0.9 = 90th percentile)
             * ``threshold`` ≥ 1 → absolute intensity threshold (0–255)
           Then threshold via OpenCV and post-process via ``noise_and_gaps``.
 
-    Contours are extracted with ``cv2.findContours`` and converted to
-    flattened polygons in YOLO-normalized coordinates.
+    Contours are extracted and converted to flattened YOLO-normalized polygons.
 
     :param channel: 2D single-channel image (uint8 recommended).
     :type channel: np.ndarray
@@ -439,18 +448,17 @@ def channel_custom_threshold(channel, threshold):
         _, binary = cv2.threshold(channel, thresh_val, 255, cv2.THRESH_BINARY)
         binary = noise_and_gaps(binary)
 
-    # Find contours from the binary mask, either after watershed, or directly
+    # Optionally split touching instances with watershed (off by default)
     use_watershed = HFinder_settings.get("watershed")
-    # Not used by default (due to rather messy output...)
     if use_watershed:
         contours = split_touching_watershed(binary)
     else:
-        contours = find_contours(binary)
-    # Simplify contours
-    #contours = simplify_contours(contours)
+        contours = mask_to_polygons(binary)
+
     # Filter out small contours
     contours = filter_contours_min_area(contours)
     
+    # Convert to YOLO-normalized polygons
     yolo_polygons = HFinder_geometry.contours_to_yolo_polygons(contours)
 
     return binary, yolo_polygons
@@ -478,10 +486,9 @@ def channel_custom_segment(json_path, ratio):
 
     Processing:
         - Read ``annotations[*].segmentation`` from the JSON file.
-        - Get the target size (``w, h``) from settings.
-        - Rescale coordinates by ``ratio`` and normalize to [0, 1] by dividing
-          x by ``w`` and y by ``h``.
-        - Skip empty/odd-length segmentations (a warning is logged).
+        - Get target size (``size``) from settings; fetch ratio from caller.
+        - Rescale coordinates by ``ratio`` and then normalize to [0, 1] by dividing
+          by ``size`` (square target).
 
     :param json_path: Path to the COCO-style JSON file.
     :type json_path: str
@@ -501,11 +508,13 @@ def channel_custom_segment(json_path, ratio):
             continue
 
         for seg in ann["segmentation"]:
+            # Skip empty/odd-length lists; warn for traceability
             if not seg or len(seg) % 2 != 0:
                 HFinder_log.warn(f"Invalid segmentation in {json_path}, " + \
                                  f"annotation id {ann.get('id')}")
                 continue
 
+            # First rescale to target pixels, then normalize by size (square
             flat = [seg[i] * ratio / size for i in range(len(seg))]
             polygons.append(flat)
 
