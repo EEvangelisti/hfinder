@@ -41,7 +41,14 @@ You can then run HFinder as follows:
 $ python hfinder.py <action>
 ```
 
-where action can be `check`, `train`, or `predict`.
+where action can be `preprocess`, `train`, or `predict`.
+
+|Action|Description|
+|-|-|
+|`preprocess`|Runs image segmentation only. Useful for troubleshooting training dataset generation.|
+|`train`|Performs image segmentation, then trains a YOLOv8 model.|
+|`predict`|Detects instances and generates polygons for the specified classes.|
+
 
 ## Training mode
 
