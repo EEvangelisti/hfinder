@@ -269,35 +269,175 @@ def generate_dataset(base, n, c, channels, polygons_per_channel):
 
 def split_train_val():
     """
-    Split images/labels into training and validation subsets.
+    Split the dataset into training and validation subsets with two guarantees:
 
-    Moves a fraction of images (and their labels) from train → val according
-    to `validation_frac` in settings.
+    1) Group integrity: all JPEGs derived from the same TIFF (including any
+       "_MIP" variants and channel combinations) are assigned together to
+       either train or validation.
 
-    :rtype: None
+    2) Class representation: choose validation groups to approximate the
+       global class distribution (greedy selection toward per-class targets),
+       instead of taking a naive random sample of individual images.
+
+    Heuristic
+    ---------
+    - Build groups of images by recovering the TIFF base name from each JPEG:
+      strip the trailing "_<num>[_<num>]..." channel suffix, and any optional
+      "_MIP" immediately before that suffix.
+    - For each group, aggregate a vector of class counts from its label files.
+    - Let `validation_frac` be p. Set per-class targets to p × (global class counts).
+    - Greedily pick the next group that most reduces the L2 distance between
+      current validation class counts and the per-class targets, until the
+      validation image budget (≈ p × total images) is reached.
+
+    Paths
+    -----
+    Reads from:
+      - dataset/images/train/*.jpg
+      - dataset/labels/train/*.txt
+    Moves selected groups to:
+      - dataset/images/val/
+      - dataset/labels/val/
+
+    Notes
+    -----
+    - If some classes are extremely rare, perfect stratification may be
+      impossible with whole-group selection; this routine still tries to
+      preserve them in both splits when feasible.
+    - Missing label files are skipped with a warning.
     """
+    import os, re, random, shutil
+    from glob import glob
+    from collections import defaultdict, Counter
+
     img_dir = HFinder_folders.get_image_train_dir()
     lbl_dir = HFinder_folders.get_label_train_dir()
     img_val_dir = HFinder_folders.get_image_val_dir()
     lbl_val_dir = HFinder_folders.get_label_val_dir()
 
+    # --- 1) Discover images and group them by their originating TIFF ----------
     image_paths = sorted(glob(os.path.join(img_dir, "*.jpg")))
-    random.shuffle(image_paths)
+    if not image_paths:
+        HFinder_log.warn("No training images found to split")
+        return
 
-    percent = HFinder_settings.get("validation_frac")
-    val_count = int(len(image_paths) * percent)
-    val_images = image_paths[:val_count]
+    # Regex: remove the trailing "_<num>[_<num>]*" (channel combo),
+    # with an optional "_MIP" right before it → yields the TIFF base.
+    # Examples:
+    #   my_sample_A_3_4_5.jpg       → group "my_sample_A"
+    #   my_sample_A_MIP_1_2.jpg     → group "my_sample_A"
+    stem_re = re.compile(r'^(?P<stem>.*?)(?:_MIP)?(?:_\d+(?:_\d+)*)$')
 
-    for img_path in val_images:
-        img_name = os.path.basename(img_path)
-        label_name = os.path.splitext(img_name)[0] + ".txt"
+    groups = defaultdict(list)  # base → [image_path, ...]
+    for ip in image_paths:
+        name = os.path.splitext(os.path.basename(ip))[0]
+        m = stem_re.match(name)
+        base = m.group("stem") if m else name
+        groups[base].append(ip)
 
-        src_lbl_path = os.path.join(lbl_dir, label_name)
-        dst_img_path = os.path.join(img_val_dir, img_name)
-        dst_lbl_path = os.path.join(lbl_val_dir, label_name)
+    # --- 2) Build per-group class counts from YOLO label files -----------------
+    # We only need class IDs; we don't care about polygon geometry here.
+    group_class_counts = {}
+    total_class_counts = Counter()
+    total_images = 0
 
-        shutil.move(img_path, dst_img_path)
-        shutil.move(src_lbl_path, dst_lbl_path)
+    for base, imgs in groups.items():
+        cls_counts = Counter()
+        for ip in imgs:
+            img_name = os.path.basename(ip)
+            label_name = os.path.splitext(img_name)[0] + ".txt"
+            lp = os.path.join(lbl_dir, label_name)
+            if not os.path.isfile(lp):
+                HFinder_log.warn(f"Missing label for {img_name}; skipping in stats")
+                continue
+            with open(lp, "r") as f:
+                for line in f:
+                    line = line.strip()
+                    if not line:
+                        continue
+                    # First token is the class id
+                    try:
+                        cls_id = int(line.split()[0])
+                        cls_counts[cls_id] += 1
+                        total_class_counts[cls_id] += 1
+                    except Exception:
+                        # Ignore malformed label lines
+                        continue
+        group_class_counts[base] = cls_counts
+        total_images += len(imgs)
+
+    # --- 3) Compute targets for validation ------------------------------------
+    frac = float(HFinder_settings.get("validation_frac") or 0.2)
+    target_images = max(1, int(round(total_images * frac)))  # approximate budget
+    target_per_class = {k: v * frac for (k, v) in total_class_counts.items()}
+
+    # --- 4) Greedy selection of groups to approach class targets --------------
+    remaining = set(groups.keys())
+    val_groups = set()
+    cur_class = Counter()
+    cur_images = 0
+
+    # Randomize processing order to avoid pathological choices on ties.
+    pool = list(remaining)
+    random.shuffle(pool)
+
+    def score_if_add(base):
+        """L2 distance to targets if we add this base."""
+        tmp = cur_class.copy()
+        tmp.update(group_class_counts.get(base, {}))
+        # Sum of squared residuals across known classes
+        sse = 0.0
+        for k, tgt in target_per_class.items():
+            diff = tmp.get(k, 0) - tgt
+            sse += diff * diff
+        # Lightly penalize overshooting the image budget
+        img_over = max(0, (cur_images + len(groups[base])) - target_images)
+        return sse + 0.01 * (img_over ** 2)
+
+    # Pick groups until we reach the (approximate) image budget.
+    while pool and cur_images < target_images:
+        # Choose the group that yields the best score improvement
+        best_base = min(pool, key=score_if_add)
+        val_groups.add(best_base)
+        cur_class.update(group_class_counts.get(best_base, {}))
+        cur_images += len(groups[best_base])
+        pool.remove(best_base)
+
+    # Remaining groups go to training.
+    train_groups = remaining - val_groups
+
+    # --- 5) Move files on disk -------------------------------------------------
+    def move_group(baseset, dest_img_dir, dest_lbl_dir):
+        for base in baseset:
+            for ip in groups[base]:
+                img_name = os.path.basename(ip)
+                label_name = os.path.splitext(img_name)[0] + ".txt"
+                lp = os.path.join(lbl_dir, label_name)
+
+                dst_img = os.path.join(dest_img_dir, img_name)
+                dst_lbl = os.path.join(dest_lbl_dir, label_name)
+
+                # Move image
+                shutil.move(ip, dst_img)
+
+                # Move label if present (may be missing for some images)
+                if os.path.isfile(lp):
+                    shutil.move(lp, dst_lbl)
+                else:
+                    HFinder_log.warn(f"Label missing for {img_name}; moved image only")
+
+    # Ensure destinations exist (they should, but be defensive)
+    os.makedirs(img_val_dir, exist_ok=True)
+    os.makedirs(lbl_val_dir, exist_ok=True)
+
+    move_group(val_groups, img_val_dir, lbl_val_dir)
+    # train_groups remain in-place under images/labels/train
+
+    HFinder_log.info(
+        f"Split complete: {len(val_groups)} TIFF groups → val "
+        f"({cur_images} images, target ≈ {target_images}); "
+        f"{len(train_groups)} groups remain in train."
+    )
 
 
 
