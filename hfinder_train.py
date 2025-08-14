@@ -1,10 +1,21 @@
 """
-hfinder_train — Utilities for training YOLO models and managing log redirection
+Training utilities for HFinder (YOLO via Ultralytics).
 
-This module provides helper functions to train YOLO models using Ultralytics' API,
-while ensuring all standard output and error streams are redirected to a log file.
-It also handles restoration of original outputs after training. It depends on 
-external modules that manage folder structures, settings, and logging behavior.
+This module provides a thin wrapper around Ultralytics' YOLO training API to:
+- Resolve project paths and settings (dataset YAML, runs dir, image size, epochs).
+- Redirect stdout/stderr to a session log during training.
+- Restore original output streams afterward.
+
+Public API
+----------
+- run(**kwargs): Train a YOLO model using settings from HFinder_settings, writing
+  logs to the current session's log directory.
+
+Notes
+-----
+- Output redirection is handled by hfinder_utils.redirect_all_output() /
+  hfinder_utils.restore_output(). If training raises, the finally block restores
+  the original file descriptors.
 """
 
 import os
@@ -18,25 +29,34 @@ import hfinder_settings as HFinder_settings
 
 def run(**kwargs):
     """
-    Trains a YOLOv8 model using the Ultralytics API and project-specific settings.
+    Train a YOLOv8 model using Ultralytics with project-specific settings.
 
     This function:
-    - Retrieves the YOLO model path and training parameters from HFinder_settings.
-    - Builds the appropriate dataset and output paths.
-    - Redirects all output (stdout and stderr) to a log file.
-    - Trains the model using `YOLO.train()`.
-    - Restores original output streams at the end.
+      - Retrieves the model path, epochs, and image size from HFinder_settings.
+      - Resolves dataset YAML and output directories via HFinder_folders.
+      - Redirects all output (stdout and stderr) to a session log file.
+      - Invokes `YOLO.train()` with defaults and user-provided overrides.
+      - Restores original output streams on exit.
 
-    Parameters:
-        **kwargs: Keyword arguments passed to `YOLO.train()`.
+    :param kwargs: Extra keyword arguments forwarded to `YOLO.train()`
+        (e.g., batch, lr0, optimizer, device, workers, seed, etc.).
+    :type kwargs: dict
+    :return: None
+    :rtype: None
     """
+    
+    # Resolve paths and settings.
     yaml = os.path.join(HFinder_folders.get_dataset_dir(), "dataset.yaml")
     model = HFinder_settings.get("model")
     epochs = HFinder_settings.get("epochs")
     HFinder_log.info(f"Training YOLOv8 for {epochs} epochs with model {model}")
+    
+    # Redirect all output to a session log file.
     log_path = os.path.join(HFinder_folders.get_log_dir(), "train.log")
     stdout_fd, stderr_fd = HFinder_utils.redirect_all_output(log_path)
-    try:       
+    
+    try:
+        # Initialize model and launch training.       
         yolo = YOLO(model)
         yolo.train(data=yaml,
                    project=HFinder_folders.get_runs_dir(),
@@ -45,5 +65,6 @@ def run(**kwargs):
                    verbose=False,
                    **kwargs)
     finally:
+        # Ensure file descriptors are restored even if training fails.
         HFinder_utils.restore_output(stdout_fd, stderr_fd)
 
