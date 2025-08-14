@@ -50,10 +50,15 @@ where action can be `preprocess`, `train`, or `predict`.
 |`predict`|Detects instances and generates polygons for the specified classes.|
 
 
-## Training mode
+## Training Mode
 
-Visit [this page](README.train.md)
+See [Training guide](README.train.md).
 
-## Prediction mode
+## Prediction Mode
 
-Visit [this page](README.predict.md)
+See [Prediction guide](README.predict.md).
+
+## Technical Introduction to HFinder
+
+For a more advanced, programmer-oriented overview of HFinder, see [Technical guide](README.technical.md).
+
