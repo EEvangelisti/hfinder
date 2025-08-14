@@ -32,7 +32,7 @@ You can do so by running:
 ```
 pip install pyyaml ultralytics tifffile scikit-image
 ```
-It is recommended to use a virtual environment.
+It is recommended to use a [virtual environment](https://docs.python.org/3/library/venv.html).
 
 ### Running
 You can then run HFinder as follows:
