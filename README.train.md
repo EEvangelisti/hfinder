@@ -58,7 +58,7 @@ both images and annotations ready for YOLO training.
 
 Your microscopy data should be saved as `.tiff` files. These can be:
 
-- **Single images**: 1 frame × N channels.  
+- **Single images**: 1 frame × N channels.
 - **Z-stacks or time series**: M frames × N channels.
 
 Ensure that:
@@ -72,9 +72,10 @@ change it via `--tiff_dir`).
 
 ## Step 2 — Define Your Classes
 
-Classes are declared in **JSON files** placed inside the `classes` directory.
-Each entry corresponds to a biological structure or object you want the model to detect.
-For each image-class pair, specify:
+Classes are declared in **JSON files** placed inside the `classes` directory 
+(a subdirectory of the folder containing TIFFs, e.g., `data`).
+Each entry corresponds to a biological structure or object you want the model 
+to detect. For each image-class pair, specify:
 
 - **Which channel to use**.
 - **How to generate masks** for that channel.
@@ -85,7 +86,8 @@ Example `membrane.json`:
 {
   "image-1.tiff": { "channel": 2, "threshold": 0.85 },
   "image-2.tiff": { "channel": 1, "segment": "image-2_membrane.json" },
-  "image-3.tiff": 3
+  "image-3.tiff": { "channel": 3, "threshold": "li" },
+  "image-4.tiff": 3
 }
 ```
 
@@ -96,20 +98,24 @@ Example `membrane.json`:
 HFinder supports **three main methods** for generating binary masks:
 
 1. **Automatic thresholding**
-   - If no explicit threshold or segmentation file is provided, HFinder applies 
-     an OpenCV automatic method (e.g., **Otsu** or **Triangle**) to the chosen channel.
+   - If no explicit threshold, thresholding function, or segmentation file is 
+   provided, HFinder automatically applies an OpenCV method (e.g., **Otsu** or 
+   **Triangle**) to the selected channel.
+   - This mode is ideal for quick segmentation when no prior information is available.
 
 2. **User-defined threshold**
-   - Set a custom threshold, either as a **percentile** or **raw intensity value**.
-   - **Example:**
+   - Specify a custom threshold in one of the following ways:
+     - **Numeric value** — as a **percentile** (0–1) or a **raw intensity value**.
+     - **Function name** — choose a thresholding algorithm such as `"isodata"`, `"otsu"`, `"li"`, etc. (case-insensitive).
+   - **Example (percentile threshold):**
      ```json
      "threshold": 0.85
      ```
-     This uses the **85th percentile** as the cutoff.
+     Uses the **85th percentile** as the cutoff.
 
-3. **Manual annotation**
+3. **Manual annotation**  
    - Provide polygon annotations in a `.json` file.
-   - Useful if you already have **high-quality segmentations** or **manually labeled data**.
+   - This option is useful when high-quality segmentations already exist, or when precise boundaries are drawn manually.*.
 
 ---
 
