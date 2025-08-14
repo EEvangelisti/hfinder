@@ -223,7 +223,7 @@ def set(key, value, replace=True):
 
 
 
-def print_summary():
+def print_summary(mode):
     """
     Log a summary of effective settings (long name → default value).
 
@@ -235,7 +235,8 @@ def print_summary():
     global SETTINGS
     for key in SETTINGS.keys():
         if isinstance(SETTINGS[key], dict):
-            HFinder_log.info(f"Parameter '{SETTINGS[key]['long']}' " + \
-                             f"set to {SETTINGS[key]['default']}")
-
+            if compatible_modes(SETTINGS[key]['mode'], mode):
+                value = False if "default" not in SETTINGS[key] else SETTINGS[key]['default']
+                HFinder_log.info(f"Parameter '{SETTINGS[key]['long']}' " + \
+                                 f"set to {SETTINGS[key]['default']}")
 
