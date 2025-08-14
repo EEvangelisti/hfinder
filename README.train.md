@@ -115,7 +115,8 @@ HFinder supports **three main methods** for generating binary masks:
 
 3. **Manual annotation**  
    - Provide polygon annotations in a `.json` file.
-   - This option is useful when high-quality segmentations already exist, or when precise boundaries are drawn manually.*.
+   - This option is useful when high-quality segmentations already exist, or when precise boundaries are drawn manually.
+    - We recommend [Makesense.ai](https://www.makesense.ai/) for manual drawing.
 
 ---
 
