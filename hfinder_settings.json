@@ -22,7 +22,19 @@
         "type": "str",
         "long": "device",
         "default": "cpu",
-        "help": "Resolve device to use for PyTorch."}, 
+        "help": "Resolve device to use for PyTorch."},
+     "vi": {
+        "mode": "predict",
+        "type": "float",
+        "long": "vote_iou",
+        "default": 0.5,
+        "help": "Vote IoU."},
+     "vm": {
+        "mode": "predict",
+        "type": "int",
+        "long": "vote_min",
+        "default": 2,
+        "help": "Vote min."},
     "dist" : {
         "mode": "preprocess|train",
         "type": "int",
