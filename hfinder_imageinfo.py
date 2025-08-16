@@ -40,6 +40,8 @@ import hfinder_settings as HFinder_settings
 
 # Name of the image currently being processed by the pipeline.
 CURRENT_IMAGE = None
+# Class currently being processed by the pipeline.
+CURRENT_CLASS = None
 
 # Master mapping built by initialize():
 #   CLASS_INSTRUCTIONS[image_name][class_name] = dict(...) | -1
@@ -152,8 +154,20 @@ def set_current_image(img_name):
     HFinder_log.info(f"Processing {img_name}")
 
 
+def set_current_class(cls_name):
+    """
+    Set the currently active class.
 
-def get_current(cls):
+    :param img_name: Name of the image to process.
+    :type img_name: str
+    :rtype: None
+    """
+    global CURRENT_CLASS
+    CURRENT_CLASS = cls_name
+
+
+
+def get_current(img_class=None):
     """
     Retrieve the instruction dictionary for a given class in the current image.
 
@@ -161,6 +175,7 @@ def get_current(cls):
     :type cls: str
     :rtype: dict | int
     """
+    cls = CURRENT_CLASS if img_class is None else img_class
     return CLASS_INSTRUCTIONS[CURRENT_IMAGE][cls]
 
 
@@ -175,9 +190,9 @@ def image_has_instructions():
 
 
 
-def from_frame(cls, default=0):
+def from_frame(img_class=None, default=0):
     """
-    Get the starting frame index for a class, zero-based.
+    Get the starting frame index for the current class, zero-based.
 
     :param cls: Class name.
     :type cls: str
@@ -186,6 +201,7 @@ def from_frame(cls, default=0):
     :rtype: int
     """
     try:
+        cls = CURRENT_CLASS if img_class is None else img_class
         # Frames are 1-based in the JSON; return 0-based here.
         x = int(get_current(cls)["from"])
         return default if x <= 0 else x - 1
@@ -194,9 +210,9 @@ def from_frame(cls, default=0):
 
 
 
-def to_frame(cls, default=0):
+def to_frame(img_class=None, default=0):
     """
-    Get the ending frame index for a class, zero-based.
+    Get the ending frame index for the current class, zero-based.
 
     :param cls: Class name.
     :type cls: str
@@ -205,6 +221,7 @@ def to_frame(cls, default=0):
     :rtype: int
     """
     try:
+        cls = CURRENT_CLASS if img_class is None else img_class
         # Frames are 1-based in the JSON; return 0-based here.
         x = int(get_current(cls)["to"])
         return default if x <= 0 else x - 1
@@ -227,58 +244,78 @@ def get_classes():
         return []
 
 
-def get_channel(cls):
+def get_channel(img_class=None):
     """
-    Get the channel index for a given class in the current image.
+    Get the channel index for the current class in the current image.
 
     :param cls: Class name.
     :type cls: str
     :rtype: int | None
     """
     try:
+        cls = CURRENT_CLASS if img_class is None else img_class
         return get_current(cls)["channel"]
     except:
         return None
 
 
-def get_threshold(cls):
+
+def get(key, img_class=None):
     """
-    Get the threshold value for a given class in the current image.
+    Get the value associated with `key` for the current class in the current image.
+
+    :param cls: Class name.
+    :type cls: str
+    :rtype: <multiple> | None
+    """
+    try:
+        cls = CURRENT_CLASS if img_class is None else img_class
+        return get_current(cls)[key]
+    except:
+        return None
+
+
+def get_threshold(img_class=None):
+    """
+    Get the threshold value for the current class in the current image.
 
     :param cls: Class name.
     :type cls: str
     :rtype: float | int | None
     """
     try:
+        cls = CURRENT_CLASS if img_class is None else img_class
         return get_current(cls)["threshold"]
     except:
         return None
 
 
-def get_manual_segmentation(cls):
+def get_manual_segmentation(img_class=None):
     """
-    Get the filename of the manual segmentation for a given class.
+    Get the filename of the manual segmentation for the current class.
 
     :param cls: Class name.
     :type cls: str
     :rtype: str | None
     """
     try:
+        cls = CURRENT_CLASS if img_class is None else img_class
         return get_current(cls)["segment"]
     except:
         return None
 
 
-def allows_MIP_generation(cls):
+def allows_MIP_generation(img_class=None):
     """
     Check whether MIP (Maximum Intensity Projection) generation is allowed
-    for a given class in the current image.
+    for the current class in the current image.
 
     :param cls: Class name.
     :type cls: str
     :rtype: bool
     """
     try:
+        cls = CURRENT_CLASS if img_class is None else img_class
         return get_current(cls)["MIP"] > 0
     except:
         # Default to permissive when the flag is absent.

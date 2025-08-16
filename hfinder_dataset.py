@@ -92,15 +92,16 @@ def prepare_class_inputs(channels, n, c, ratio):
 
     for cls in HFinder_ImageInfo.get_classes():
     
+        HFinder_ImageInfo.set_current_class(cls)
         # Per-class directives
-        ch = HFinder_ImageInfo.get_channel(cls)
-        threshold = HFinder_ImageInfo.get_threshold(cls)
-        poly_json = HFinder_ImageInfo.get_manual_segmentation(cls)
+        ch = HFinder_ImageInfo.get_channel()
+        threshold = HFinder_ImageInfo.get_threshold()
+        poly_json = HFinder_ImageInfo.get_manual_segmentation()
 
         if threshold is not None:
             # Custom (fixed) thresholding across a frame range
-            from_frame = HFinder_ImageInfo.from_frame(cls, default=0)
-            to_frame = HFinder_ImageInfo.to_frame(cls, default=n)
+            from_frame = HFinder_ImageInfo.from_frame(default=0)
+            to_frame = HFinder_ImageInfo.to_frame(default=n)
             for i in range(from_frame // c, to_frame // c + 1):
                 frame = i * c + ch
                 binary, polygons = HFinder_segmentation.channel_custom_threshold(channels[frame], threshold)
@@ -113,15 +114,15 @@ def prepare_class_inputs(channels, n, c, ratio):
         elif poly_json is not None:
             # Load user-provided segmentation polygons (single-plane only)
             if n > 1:
-                HFinder_log.fail("Applying user segmentation to Z-stacks has not been implemented yet")
+                HFinder_log.fail(f"File '{base}.tif' - applying user segmentation to Z-stacks has not been implemented yet")
             json_path = os.path.join(HFinder_settings.get("tiff_dir"), poly_json)
             polygons = HFinder_segmentation.channel_custom_segment(json_path, ratio)
             results[ch].append((cls, polygons))
 
         else:
             # Automatic thresholding as a fallback
-            from_frame = HFinder_ImageInfo.from_frame(cls, default=0)
-            to_frame = HFinder_ImageInfo.to_frame(cls, default=n)
+            from_frame = HFinder_ImageInfo.from_frame(default=0)
+            to_frame = HFinder_ImageInfo.to_frame(default=n)
             for i in range(from_frame // c, to_frame // c + 1):
                 frame = i * c + ch
                 binary, polygons = HFinder_segmentation.channel_auto_threshold(channels[frame])

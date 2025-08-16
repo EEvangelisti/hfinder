@@ -54,12 +54,11 @@ import hfinder_log as HFinder_log
 import hfinder_folders as HFinder_folders
 import hfinder_settings as HFinder_settings
 import hfinder_geometry as HFinder_geometry
-
+import hfinder_imageinfo as HFinder_ImageInfo
 
 
 def mask_to_polygons(mask,
                      mode: str = "subtract_holes",
-                     min_area: float = 60.0,
                      simplify_rel: float = 0.0003,
                      simplify_min: float = 0.05,
                      simplify_max: float = 0.3,
@@ -79,8 +78,6 @@ def mask_to_polygons(mask,
     :type mask: np.ndarray
     :param mode: "subtract_holes" or "rings".
     :type mode: str
-    :param min_area: Minimum area (pixels) to keep a contour/hole.
-    :type min_area: float
     :param simplify_rel: Relative epsilon fraction of perimeter.
     :type simplify_rel: float
     :param simplify_min: Minimum absolute epsilon (px).
@@ -108,6 +105,10 @@ def mask_to_polygons(mask,
         L = cv2.arcLength(c, True)
         eps = np.clip(simplify_rel * L, simplify_min, simplify_max)
         return cv2.approxPolyDP(c, eps, True)
+
+    # Minimum area for the local image, or global settings
+    min_area = HFinder_ImageInfo.get("min_area_px")
+    min_area = float(HFinder_settings.get("min_area_px")) if min_area is None else float(min_area)
 
     if mode == "rings":
         # Keep rings explicitly: one entry per region [outer, hole1, ...]
@@ -332,7 +333,13 @@ def filter_contours_min_area(contours):
     :returns: Subset of contours with area >= ``HFinder_settings.get("min_area_px")``.
     :rtype: list[np.ndarray]
     """
-    min_area_px = HFinder_settings.get("min_area_px")
+    special_case = HFinder_ImageInfo.get("min_area_px")
+    if special_case is None:
+        # General setting used throughout the program
+        min_area_px = HFinder_settings.get("min_area_px")
+    else:
+        # Local setting
+        min_area_px = special_case
     return [c for c in contours if cv2.contourArea(c) >= float(min_area_px)]
 
 
