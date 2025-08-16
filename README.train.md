@@ -161,7 +161,52 @@ drawing.
 <img src="doc/Training-dataset.png"/>
 </p>
 
+## Parameters
 
+```
+usage: hfinder train [-h] [-d TIFF_DIR] [-t AUTO_THRESHOLD] [-min MIN_AREA_PX]
+                     [-dist MIN_DISTANCE] [-ws WATERSHED] [-pub] [-s SIZE]
+                     [-e EPOCHS] [-m MODEL] [-dbg] [-v VALIDATION_FRAC]
 
+options:
+  -h, --help            show this help message and exit
+  -d <path>, --tiff_dir <path>
+                        Path to the folder containing the training image files
+                        or the images to predict (default: data)
+  -t <str|int|float>, --auto_threshold <str|int|float>
+                        Thresholding strategy: {auto, otsu, isodata, yen, li,
+                        triangle} or numeric (percentile <1, absolute ≥1).
+                        ‘auto’ selects Otsu or Triangle based on skewness.
+                        (default: auto)
+  -min <int>, --min_area_px <int>
+                        Remove contours smaller than this area (pixels²);
+                        raise it to suppress speckles and debris. (default:
+                        20)
+  -dist <int>, --min_distance <int>
+                        Minimum Euclidean spacing between seed peaks (in
+                        pixels) before watershed; peaks closer than this are
+                        merged. Lower values split touching objects more;
+                        higher values yield fewer splits. (default: 2)
+  -ws WATERSHED, --watershed WATERSHED
+                        Enable watershed splitting of touching objects after
+                        binarization; helps separate merged instances.
+                        (default: False)
+  -pub, --publication   Print contours as in publication style.
+  -s <int>, --size <int>
+                        Target size (in pixels) for training images. (default:
+                        640)
+  -e <int>, --epochs <int>
+                        Total number of complete training passes through the
+                        entire dataset. (default: 100)
+  -m <path>, --model <path>
+                        Path to the YOLO model file to be used as the starting
+                        point for training (pretrained weights or a custom
+                        checkpoint). (default: yolov8n-seg.pt)
+  -dbg, --debug         Enable or disable debug mode to display additional
+                        logs and diagnostic information.
+  -v <float>, --validation_frac <float>
+                        Fraction of the dataset to reserve for validation
+                        during training (value between 0 and 1). (default:
+                        0.2)
 
-
+```
