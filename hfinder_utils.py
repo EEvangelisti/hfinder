@@ -156,6 +156,28 @@ def load_class_definitions():
 
 
 
+def load_class_definitions_from_yaml(yaml_path):
+    """
+    Read YOLO dataset.yaml and return a mapping {class_name: class_id}.
+    Supports both:
+      - names: [ "class0", "class1", ... ]
+      - names: {0: "class0", 1: "class1", ...}
+    """
+    with open(yaml_path, "r") as f:
+        data = yaml.safe_load(f) or {}
+    names = data.get("names")
+    if not names:
+        raise ValueError(f"No 'names' in {yaml_path}")
+
+    if isinstance(names, list):
+        return {name: i for i, name in enumerate(names)}
+    elif isinstance(names, dict):
+        # keys can be str or int -> ensure int ids
+        return {name: int(i) for i, name in names.items()}
+    else:
+        raise TypeError(f"'names' must be list or dict in {yaml_path}, got {type(names).__name__}")
+
+
 def power_set(channels, n, c):
     """
     Build small combinations of channels for visualization or modeling.

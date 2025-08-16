@@ -1,14 +1,16 @@
 # Prediction from TIFFs with channel-fusion ensembling + vote consolidation
 
 import os
+import cv2
 import json
 import math
+import torch
 import random
-from glob import glob
-from collections import defaultdict, Counter
-
+import tifffile
 import numpy as np
 from PIL import Image
+from glob import glob
+from collections import defaultdict, Counter
 from ultralytics import YOLO
 
 import hfinder_log as HFinder_log
@@ -17,10 +19,6 @@ import hfinder_settings as HFinder_settings
 import hfinder_imageops as HFinder_ImageOps
 import hfinder_palette as HFinder_palette
 import hfinder_utils as HFinder_utils
-
-import torch
-import tifffile
-import cv2
 
 
 # -----------------------
@@ -56,46 +54,58 @@ def iou_xyxy(a, b):
     return inter / denom
 
 
-def consolidate_boxes(all_boxes, iou_thresh=0.5, min_votes=2):
+def consolidate_boxes(all_dets, iou_thresh=0.5, min_votes=2):
     """
-    all_boxes: liste de dicts {"cls": int, "conf": float, "xyxy": np.array([x1,y1,x2,y2])}
-    Retourne une liste consolidee par classe avec vote (>= min_votes).
+    all_dets: liste de dicts
+      {"cls": int, "conf": float, "xyxy": np.array([x1,y1,x2,y2]),
+       "segs": [ [x1,y1,...], [x1,y1,...], ... ]  # peut être vide }
     """
     by_class = defaultdict(list)
-    for d in all_boxes:
+    for d in all_dets:
         by_class[d["cls"]].append(d)
 
     consolidated = []
     for cls, dets in by_class.items():
-        clusters = []  # chaque cluster = {"members":[...], "xyxy":avg, "conf":avg}
+        clusters = []  # {members, xyxy, conf_sum, best_any, best_with_segs}
         for det in dets:
             matched = False
             for cl in clusters:
-                # IoU avec le centre (moyenne courante) du cluster
                 if iou_xyxy(det["xyxy"], cl["xyxy"]) >= iou_thresh:
                     cl["members"].append(det)
-                    # moyenne pondérée par conf (simple)
+                    # mise à jour barycentre pondéré par la confiance
                     wsum = cl["conf_sum"] + det["conf"]
                     cl["xyxy"] = (cl["xyxy"] * cl["conf_sum"] + det["xyxy"] * det["conf"]) / max(1e-9, wsum)
                     cl["conf_sum"] = wsum
+                    # meilleur global
+                    if det["conf"] > cl["best_any"]["conf"]:
+                        cl["best_any"] = det
+                    # meilleur avec polygones
+                    if det.get("segs") and (not cl["best_with_segs"] or det["conf"] > cl["best_with_segs"]["conf"]):
+                        cl["best_with_segs"] = det
                     matched = True
                     break
             if not matched:
                 clusters.append({
                     "members": [det],
                     "xyxy": det["xyxy"].copy(),
-                    "conf_sum": det["conf"]
+                    "conf_sum": det["conf"],
+                    "best_any": det,
+                    "best_with_segs": det if det.get("segs") else None,
                 })
-        # Finalisation + filtrage par votes
+
         for cl in clusters:
             votes = len(cl["members"])
             if votes >= min_votes:
                 mean_conf = cl["conf_sum"] / votes
+                # priorité au meilleur qui a des polygones
+                chosen = cl["best_with_segs"] if cl["best_with_segs"] is not None else cl["best_any"]
+                segs = chosen.get("segs") or []  # peut rester vide si aucun n'avait de polygone
                 consolidated.append({
                     "cls": cls,
                     "votes": votes,
                     "conf_mean": float(mean_conf),
-                    "xyxy": cl["xyxy"].tolist()
+                    "xyxy": cl["xyxy"].tolist(),
+                    "segs": segs
                 })
     return consolidated
 
@@ -159,6 +169,28 @@ def build_fusions_for_tiff(tif_path, out_dir, rng=None):
     return fusions, (H, W), (n, c)
 
 
+
+def coco_skeleton(categories):
+    """Retourne un dict COCO vide avec la liste des catégories."""
+    cats = [{"id": cid, "name": name, "supercategory": "hf"} 
+            for name, cid in sorted(categories.items(), key=lambda x: x[1])]
+    return {"images": [], "annotations": [], "categories": cats}
+
+def poly_area_xy(poly):
+    """Aire d’un polygone (liste [x1,y1,...]) en px^2 (via Shoelace)."""
+    if not poly or len(poly) < 6: 
+        return 0.0
+    it = iter(poly)
+    pts = [(float(x), float(next(it))) for x in it]
+    x = [p[0] for p in pts]; y = [p[1] for p in pts]
+    return 0.5 * abs(sum(x[i]*y[(i+1)%len(pts)] - x[(i+1)%len(pts)]*y[i] for i in range(len(pts))))
+
+def bbox_xyxy_to_xywh(b):
+    x1,y1,x2,y2 = map(float, b)
+    return [x1, y1, max(0.0, x2 - x1), max(0.0, y2 - y1)]
+
+
+
 # -----------------------
 # Main predict
 # -----------------------
@@ -166,7 +198,7 @@ def run():
     """
     Ensembling sur TIFF : génère des fusions RGB pour toutes combinaisons 1..3 canaux,
     prédit avec YOLO, puis consolide par vote/IoU les détections récurrentes.
-    Écrit un consolidated.json par TIFF sous runs/predict/<TIFF_BASE>/.
+    Écrit consolidated.json et coco.json par TIFF sous runs/predict/<TIFF_BASE>/.
     """
     # Poids / modèle
     weights = HFinder_settings.get("weights")
@@ -198,7 +230,6 @@ def run():
         return
 
     project = HFinder_folders.get_runs_dir()
-
     HFinder_log.info(
         f"Predicting on {len(tiffs)} TIFF(s) | conf={conf} | imgsz={imgsz} | device={device}"
     )
@@ -213,6 +244,9 @@ def run():
         rng = random.Random(base)  # déterministe par TIFF
         fusions, (H, W), (n, c) = build_fusions_for_tiff(tif_path, out_dir, rng=rng)
         fusion_paths = [p for p, _ in fusions]
+        if not fusion_paths:
+            HFinder_log.warn(f"[{base}] No fused images generated; skipping")
+            continue
 
         HFinder_log.info(f"[{base}] Generated {len(fusion_paths)} fused images (n={n}, c={c})")
 
@@ -226,37 +260,109 @@ def run():
             conf=conf,
             imgsz=imgsz,
             device=device,
-            verbose=False
+            verbose=False,
+            retina_masks=True
         )
 
-        # 3) Collecter toutes les boxes pour vote IoU
-        all_boxes = []
+        # 3) Collecter toutes les boxes + polygones pour vote IoU
+        all_dets = []  # liste de dicts {"cls","conf","xyxy","segs"}
         for img_path, r in zip(fusion_paths, results):
             if getattr(r, "boxes", None) is None or r.boxes is None or r.boxes.shape[0] == 0:
                 continue
-            # xyxy (Nx4), conf (N), cls (N)
-            xyxy = r.boxes.xyxy.cpu().numpy()
-            confs = r.boxes.conf.cpu().numpy()
-            clss = r.boxes.cls.cpu().numpy().astype(int)
-            for bb, sc, cc in zip(xyxy, confs, clss):
-                # Clamp pour sécurité (sur grille size×size)
-                x1, y1, x2, y2 = [float(max(0.0, min(v, imgsz))) for v in bb]
-                all_boxes.append({"cls": int(cc), "conf": float(sc), "xyxy": np.array([x1, y1, x2, y2], dtype=np.float32)})
+            xyxy = r.boxes.xyxy.detach().cpu().numpy()
+            confs = r.boxes.conf.detach().cpu().numpy()
+            clss = r.boxes.cls.detach().cpu().numpy().astype(int)
+
+            # Polygones : r.masks.xy est une liste par instance (liste de polylignes)
+            segs_list = None
+            if getattr(r, "masks", None) is not None and getattr(r.masks, "xy", None) is not None:
+                segs_list = r.masks.xy  # liste de listes d’array (N_i x 2) en pixels
+
+            for i, (bb, sc, cc) in enumerate(zip(xyxy, confs, clss)):
+                # clamp dans l'espace des fusions (W,H) — tes fusions sont carrées si size carré
+                x1 = float(max(0.0, min(bb[0], W)))
+                y1 = float(max(0.0, min(bb[1], H)))
+                x2 = float(max(0.0, min(bb[2], W)))
+                y2 = float(max(0.0, min(bb[3], H)))
+
+                det = {
+                    "cls": int(cc),
+                    "conf": float(sc),
+                    "xyxy": np.array([x1, y1, x2, y2], dtype=np.float32),
+                    "segs": []
+                }
+                if segs_list is not None and i < len(segs_list) and segs_list[i] is not None:
+                    flats = []
+                    for poly in segs_list[i]:
+                        if poly is None or len(poly) < 3:
+                            continue
+                        flats.append(poly.reshape(-1).tolist())  # [x1,y1,...]
+                    det["segs"] = flats
+                all_dets.append(det)
 
         # 4) Consolidation
-        consolidated = consolidate_boxes(all_boxes, iou_thresh=iou_vote, min_votes=min_votes)
+        consolidated = consolidate_boxes(all_dets, iou_thresh=iou_vote, min_votes=min_votes)
 
-        # 5) Sauvegarde JSON récapitulatif
+        # 5) Sauvegardes JSON
+        # 5a) Résumé consolidated.json
         summary = {
             "tiff": os.path.basename(tif_path),
-            "img_size": [imgsz, imgsz],
+            "img_size": [int(W), int(H)],
             "vote_iou": iou_vote,
             "vote_min": min_votes,
-            "detections": consolidated  # [{cls, votes, conf_mean, xyxy}]
+            "detections": consolidated  # [{cls, votes, conf_mean, xyxy, segs}]
         }
         with open(os.path.join(out_dir, "consolidated.json"), "w") as f:
             json.dump(summary, f, indent=2)
 
-        # 6) Log court
+        # 5b) COCO coco.json
+        # Prefer the exact dataset.yaml used for training
+        dataset_yaml = HFinder_settings.get("yaml")
+        if not os.path.isfile(dataset_yaml):
+            HFinder_log.fail(f"dataset.yaml not found: {dataset_yaml}")
+
+        class_ids = HFinder_utils.load_class_definitions_from_yaml(dataset_yaml)
+        coco = coco_skeleton(class_ids)
+
+        # on référence une image de fond (la première fusion)
+        ref_img_rel = os.path.basename(fusion_paths[0])
+        image_id = 1
+        coco["images"].append({
+            "id": image_id,
+            "file_name": ref_img_rel,
+            "width": int(W),
+            "height": int(H),
+        })
+
+        ann_id = 1
+        for det in consolidated:
+            bbox_xywh = bbox_xyxy_to_xywh(det["xyxy"])
+            if det.get("segs"):
+                area = float(sum(poly_area_xy(seg) for seg in det["segs"]))
+                segmentation = det["segs"]
+            else:
+                area = float(bbox_xywh[2] * bbox_xywh[3])
+                segmentation = []
+
+            coco["annotations"].append({
+                "id": ann_id,
+                "image_id": image_id,
+                "category_id": int(det["cls"]),
+                "bbox": [round(v, 2) for v in bbox_xywh],
+                "area": round(area, 2),
+                "segmentation": segmentation,  # liste de listes [x1,y1,...]
+                "iscrowd": 0,
+                "confidence": round(det["conf_mean"], 4),
+                "votes": int(det["votes"])
+            })
+            ann_id += 1
+
+        with open(os.path.join(out_dir, "coco.json"), "w") as f:
+            json.dump(coco, f, indent=2)
+
+        # 6) Logs
         counts = Counter([d["cls"] for d in consolidated])
-        HFinder_log.info(f"[{base}] Consolidated {sum(counts.values())} detections across {len(set(counts.elements()))} classes")
+        HFinder_log.info(
+            f"[{base}] Consolidated {sum(counts.values())} detections across "
+            f"{len(set(counts.elements()))} classes; COCO & consolidated saved."
+        )
