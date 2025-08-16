@@ -37,58 +37,46 @@ def redirect_all_output(log_path):
     """
     Redirect both stdout and stderr to a specified log file.
 
-    This function duplicates the current stdout/stderr file descriptors,
-    redirects them to *log_path*, and returns the originals so they can be
-    restored later with restore_output().
+    Works cross-platform (Unix/Windows) by reassigning sys.stdout/sys.stderr.
 
     :param log_path: Path to the log file where output will be written.
     :type log_path: str
-    :return: File descriptors for the original stdout and stderr.
-    :rtype: tuple[int, int]
+    :return: Tuple of the original stdout and stderr objects.
+    :rtype: tuple[TextIO, TextIO]
     """
-    
-    # Flush any buffered output before switching streams
+    # Flush existing buffers
     sys.stdout.flush()
     sys.stderr.flush()
-    
-    # Open/truncate the log file; get a writable file descriptor (FD)
-    log_fd = os.open(log_path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC)
-    
-    # Save original stdout and stderr FDs
-    stdout_fd = os.dup(1)
-    stderr_fd = os.dup(2)
 
-    # Redirect stdout and stderr to the log file FD
-    os.dup2(log_fd, 1)
-    os.dup2(log_fd, 2)
-    os.close(log_fd)
+    # Open log file in append mode so output isn't lost on multiple calls
+    log_file = open(log_path, "w", buffering=1, encoding="utf-8")
 
-    return stdout_fd, stderr_fd
+    # Save original stdout and stderr
+    orig_stdout, orig_stderr = sys.stdout, sys.stderr
+
+    # Redirect to log file
+    sys.stdout = log_file
+    sys.stderr = log_file
+
+    return orig_stdout, orig_stderr
 
 
 
-def restore_output(stdout_fd, stderr_fd):
+def restore_output(orig_stdout, orig_stderr):
     """
     Restore stdout and stderr to their original state.
 
-    Call this after redirect_all_output() to revert logging back to the terminal.
-
-    :param stdout_fd: File descriptor of the original stdout.
-    :type stdout_fd: int
-    :param stderr_fd: File descriptor of the original stderr.
-    :type stderr_fd: int
-    :rtype: None
+    :param orig_stdout: The original sys.stdout.
+    :type orig_stdout: TextIO
+    :param orig_stderr: The original sys.stderr.
+    :type orig_stderr: TextIO
     """
-    
-    # Flush any pending data in the redirected streams
     sys.stdout.flush()
     sys.stderr.flush()
-    
-    # Rebind stdout/stderr to their original FDs and close the temporaries
-    os.dup2(stdout_fd, 1)
-    os.dup2(stderr_fd, 2)
-    os.close(stdout_fd)
-    os.close(stderr_fd)
+
+    # Restore
+    sys.stdout = orig_stdout
+    sys.stderr = orig_stderr
 
 
 
