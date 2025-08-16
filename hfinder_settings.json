@@ -1,10 +1,10 @@
 {
     "d": {
-        "mode": "preprocess|train",
+        "mode": "*",
         "type": "str",
         "long": "tiff_dir",
         "default": "data",
-        "help": "Path to the folder containing the training image files (TIFF format)."},
+        "help": "Path to the folder containing the training image files or the images to predict"},
     "t": {
         "mode": "*",
         "type": "str",
@@ -17,13 +17,19 @@
         "long": "min_area_px",
         "default": 20,
         "help": "Remove contours smaller than this area (pixels²); raise it to suppress speckles and debris."},
+    "de": {
+        "mode": "predict",
+        "type": "str",
+        "long": "device",
+        "default": "cpu",
+        "help": "Resolve device to use for PyTorch."}, 
     "dist" : {
         "mode": "preprocess|train",
         "type": "int",
         "long": "min_distance",
         "default": 2,
         "help": "Minimum Euclidean spacing between seed peaks (in pixels) before watershed; peaks closer than this are merged. Lower values split touching objects more; higher values yield fewer splits."},
-    "w" : {
+    "ws" : {
         "mode": "preprocess|train",
         "type": "bool",
         "long": "watershed",
@@ -39,6 +45,12 @@
         "long": "size",
         "default": 640,
         "help": "Target size (in pixels) for training images."},
+    "w" : {
+        "mode": "predict",
+        "type": "str",
+        "long": "weights",
+        "default": "yolov8n-seg.pt",
+        "help": "Weights for prediction."},
     "e": {
         "mode": "train",
         "type": "int",
