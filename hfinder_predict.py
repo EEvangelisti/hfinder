@@ -338,7 +338,7 @@ def run():
         HFinder_log.fail(f"dataset YAML not found: {yaml_path}")
     class_ids = HFinder_utils.load_class_definitions_from_yaml(yaml_path)  # {"name": id}
 
-    overlay_iou = HFinder_settings.get("overlay_iou") or 0.5
+    overlay_iou = HFinder_settings.get("cross_iou") or 0.5
     overlay_policy = (HFinder_settings.get("overlay_policy") or "keep_best").lower()
     try:
         wl_raw = HFinder_settings.get("overlay_whitelist") or "[]"

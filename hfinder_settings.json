@@ -6,7 +6,7 @@
         "default": "data",
         "help": "Path to the folder containing the training image files or the images to predict"
     },
-    "t": {
+    "th": {
         "mode": "preprocess|train",
         "type": "str",
         "long": "auto_threshold",
@@ -27,12 +27,12 @@
         "default": "cpu",
         "help": "Computation device for PyTorch (e.g. 'cpu', '0' for GPU)."
     },
-    "oi": {
+    "ci": {
         "mode": "predict",
         "type": "float",
-        "long": "overlay_iou",
+        "long": "cross_iou",
         "default": 0.5,
-        "help": "IoU threshold to consider cross-class overlaps."
+        "help": "IoU threshold for cross-class suppression."
     },
     "op": {
         "mode": "predict",
@@ -53,7 +53,7 @@
         "type": "float",
         "long": "vote_iou",
         "default": 0.5,
-        "help": "IoU threshold for merging overlapping detections during voting."
+        "help": "IoU threshold for intra-class voting/clustering."
     },
     "vm": {
         "mode": "predict",
