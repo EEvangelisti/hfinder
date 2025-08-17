@@ -14,8 +14,8 @@ consistent with the training workflow:
    Predictions require a trained model and the description of the classes to 
    detect. 
    - Specify the path to the trained YOLO weights (`.pt` file) obtained during
-     training using `-w ` or `--weights`.
-   - Provide the same dataset `.yaml` file used during training.
+     training using `-w` or `--weights`.
+   - Provide the same dataset `.yaml` file used during training using `-y` or `--yaml`.
      This file defines the list of classes and ensures predictions can be mapped
      back to meaningful labels.
 
