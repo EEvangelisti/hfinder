@@ -222,11 +222,19 @@ def intra_class_consolidate_keep_best(dets, iou_intra=0.5, min_votes=2):
                     cl["members"].append(det)
                     cl["votes"] += 1
                     cl["center"] = (cl["center"] * (cl["votes"] - 1) + det["xyxy"]) / cl["votes"]
+                    # accumulate channel votes
+                    for ch in det.get("channels", []):
+                        cl["ch_votes"][ch] += 1
                     matched = True
                     break
             if not matched:
-                clusters.append({"center": det["xyxy"].astype(np.float32).copy(),
-                                 "members": [det], "votes": 1})
+                ch_counter = Counter(det.get("channels", []))
+                clusters.append({
+                    "center": det["xyxy"].astype(np.float32).copy(),
+                    "members": [det],
+                    "votes": 1,
+                    "ch_votes": ch_counter
+                })
 
         for cl in clusters:
             if cl["votes"] < min_votes:
@@ -241,7 +249,9 @@ def intra_class_consolidate_keep_best(dets, iou_intra=0.5, min_votes=2):
                 "conf": float(best["conf"]),
                 "conf_mean": float(best["conf"]),  # <-- add this for compatibility
                 "xyxy": best["xyxy"].tolist(),
-                "segs": best.get("segs", [])
+                "segs": best.get("segs", []),
+                "channels": best.get("channels", []),
+                "channels_votes": dict(cl["ch_votes"].most_common())
             })
     return out
     
@@ -342,7 +352,12 @@ def build_fusions_for_tiff(tif_path, out_dir, rng=None):
 
         out_path = os.path.join(out_dir, fname)
         Image.fromarray(rgb).save(out_path, "JPEG")
-        fusions.append((out_path, combo))
+        fusions.append({
+            "path": out_path,
+            "combo": combo,          # tuple[int, ...] selected channels
+            "noise": noise,          # list[int] noise channels (same Z-slice)
+            "palette": palette       # for traceability (optional)
+        })
 
     # Dimensions (H,W)
     H, W = next(iter(channels_dict.values())).shape
@@ -578,7 +593,8 @@ def run():
         orig_W = int(round(W / ratio))
         orig_H = int(round(H / ratio))
         scale_factor = 1.0 / ratio
-        fusion_paths = [p for p, _ in fusions]
+        fusion_paths = [f["path"] for f in fusions]
+        fusion_meta = {f["path"]: f for f in fusions}
         if not fusion_paths:
             HFinder_log.warn(f"[{tif_base}] No fused images generated; skipping")
             continue
@@ -603,6 +619,8 @@ def run():
         for img_path, r in zip(fusion_paths, results):
             if getattr(r, "boxes", None) is None or r.boxes is None or r.boxes.shape[0] == 0:
                 continue
+            meta = fusion_meta.get(img_path, {})
+            used_channels = list(meta.get("combo", []))  # the channels that formed this RGB
             xyxy = r.boxes.xyxy.detach().cpu().numpy()
             confs = r.boxes.conf.detach().cpu().numpy()
             clss = r.boxes.cls.detach().cpu().numpy().astype(int)
@@ -621,7 +639,8 @@ def run():
                     "cls": int(cc),
                     "conf": float(sc),
                     "xyxy": np.array([x1, y1, x2, y2], dtype=np.float32),
-                    "segs": []
+                    "segs": [],
+                    "channels": used_channels
                 }
 
                 # 1) Try masks.xy (handles (N,2) OR list of (N,2))
@@ -692,7 +711,9 @@ def run():
                 "segmentation": segmentation,
                 "iscrowd": 0,
                 "confidence": round(det["conf_mean"], 4),
-                "votes": int(det["votes"])
+                "votes": int(det["votes"]),
+                "hf_channels": det.get("channels", []),
+                "hf_channels_votes": det.get("channels_votes", {})
             })
             ann_id += 1
 
