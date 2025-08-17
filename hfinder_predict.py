@@ -368,7 +368,6 @@ def coco_skeleton(categories):
 def poly_area_xy(poly):
     """
     Compute the polygon area (in pixels²) from a flattened [x1, y1, x2, y2, ...] list.
-
     Uses the shoelace formula. Degenerate inputs (fewer than 3 points) return 0.0.
 
     :param poly: Flattened polygon coordinates [x1, y1, x2, y2, ...].
@@ -380,8 +379,10 @@ def poly_area_xy(poly):
         return 0.0
     it = iter(poly)
     pts = [(float(x), float(next(it))) for x in it]
-    x = [p[0] for p in pts]; y = [p[1] for p in pts]
-    return 0.5 * abs(sum(x[i]*y[(i+1)%len(pts)] - x[(i+1)%len(pts)]*y[i] for i in range(len(pts))))
+    x = [p[0] for p in pts]
+    y = [p[1] for p in pts]
+    return 0.5 * abs(sum(x[i] * y[(i + 1) % len(pts)] - 
+           x[(i + 1) % len(pts)] * y[i] for i in range(len(pts))))
 
 
 
