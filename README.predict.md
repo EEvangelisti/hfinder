@@ -6,6 +6,12 @@
 
 ## Parameters
 
+
+|Short|Long|Description|Default value|
+|-|-|-|-|
+|`-d <path>`|`--tiff_dir <path>`|Path to the folder containing the training image files or the images to predict|data|
+|`-de <str>`|`--device <str>`|Computation device for PyTorch (e.g. 'cpu', '0' for GPU)|cpu|
+
 ```
 usage: hfinder predict [-h] [-d TIFF_DIR] [-de DEVICE] [-vi VOTE_IOU]
                        [-vm VOTE_MIN] [-b BATCH] [-y YAML] [-w WEIGHTS] [-dbg]
