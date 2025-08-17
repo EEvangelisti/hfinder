@@ -52,8 +52,8 @@
         "mode": "predict",
         "type": "str",
         "long": "yaml",
-        "default": "dataset.yaml",
-        "help": "Path to the training dataset.yaml (used to resolve class names)."
+        "default": "weights/hfinder-yolov8n-seg.yaml",
+        "help": "Path to the YAML file used to resolve class names."
     },
     "dist" : {
         "mode": "preprocess|train",
