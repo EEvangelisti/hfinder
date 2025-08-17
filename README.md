@@ -34,6 +34,8 @@ corrected in Makesense.ai or other COCO-compatible annotation editors.
 HFinder is designed for researchers studying plant–microbe interactions and 
 host colonization dynamics, providing a reproducible and semi-automated 
 framework to accelerate annotation, training, and large-scale image analysis.
+It provides both **pretrained models** and the **full workflow** to retrain on 
+custom datasets, making it immediately usable yet fully adaptable.
 
 ## Installation
 
