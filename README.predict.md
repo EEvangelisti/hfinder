@@ -1,4 +1,4 @@
-# Predicting Microscopic Structures with HFinder
+# Object Detection and Segmentation with HFinder
 
 ## Running Predictions
 
