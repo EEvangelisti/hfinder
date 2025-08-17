@@ -6,11 +6,11 @@ HFinder includes a prediction module that allows you to run object detection and
 segmentation on new microscopy images. The process is designed to be simple and
 consistent with the training workflow:
 
-1. **Provide input TIFF files**
+1. **Provide input TIFF files**  
    Place your microscopy images (single-frame or multi-frame TIFFs) in the 
    directory specified by `-d ` or `--tiff_dir` (see parameter list below).
 
-2. **Load the trained model and dataset YAML**
+2. **Load the trained model and dataset YAML**  
    Predictions require a trained model and the description of the classes to 
    detect. 
    - Specify the path to the trained YOLO weights (`.pt` file) obtained during
@@ -19,12 +19,12 @@ consistent with the training workflow:
      This file defines the list of classes and ensures predictions can be mapped
      back to meaningful labels.
 
-3. **Channel fusion and ensembling**
+3. **Channel fusion and ensembling**  
    For each TIFF, HFinder generates multiple RGB images by combining channels in
    different ways. Predictions are run on all these images, and results are
    consolidated to reduce noise and highlight consistent detections.
 
-4. **Export results**
+4. **Export results**  
    Predictions are saved in a dedicated output folder under `runs/predict/`.
    - Each TIFF produces a set of JPEG images with overlays showing the detections.
    - A `consolidated.json` file summarizes the detections per TIFF.
