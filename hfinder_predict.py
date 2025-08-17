@@ -346,7 +346,7 @@ def build_fusions_for_tiff(tif_path, out_dir, rng=None):
 
     # Dimensions (H,W)
     H, W = next(iter(channels_dict.values())).shape
-    return fusions, (H, W), (n, c)
+    return ratio, fusions, (H, W), (n, c)
 
 
 
@@ -461,6 +461,47 @@ def polys_from_mask_i(result_obj, i):
 
 
 
+def rescale_box_xyxy(box, scale_factor):
+    """
+    Rescale a bounding box from resized space back to original space.
+
+    This function takes a bounding box in [x1, y1, x2, y2] format (resized space)
+    and multiplies all values by the scale factor. The result is a bounding box
+    expressed in the original TIFF coordinate system.
+
+    :param box: Bounding box coordinates [x1, y1, x2, y2].
+    :type box: list[float] | tuple[float, float, float, float]
+    :param scale_factor: Factor to convert from resized to original coordinates
+                         (usually 1.0 / resize_ratio).
+    :type scale_factor: float
+    :return: Rescaled bounding box in original coordinates.
+    :rtype: list[float]
+    """
+    return [float(v) * scale_factor for v in box]
+
+
+
+def rescale_seg_flat(seg, scale_factor):
+    """
+    Rescale a flattened polygon segmentation from resized space back to original space.
+
+    This function takes a segmentation polygon represented as a flat list
+    of alternating x and y coordinates, e.g. [x1, y1, x2, y2, ...], and multiplies
+    all values by the scale factor. The result is a polygon expressed in the
+    original TIFF coordinate system.
+
+    :param seg: Flattened polygon segmentation (list of floats).
+    :type seg: list[float]
+    :param scale_factor: Factor to convert from resized to original coordinates
+                         (usually 1.0 / resize_ratio).
+    :type scale_factor: float
+    :return: Rescaled polygon segmentation in original coordinates.
+    :rtype: list[float]
+    """
+    return [float(v) * scale_factor for v in seg]
+
+
+
 def run():
     """
     Run full prediction pipeline:
@@ -533,7 +574,10 @@ def run():
 
         # 1) Generate fused RGB images (same logic as training)
         rng = random.Random(tif_base)  # deterministic per TIFF
-        fusions, (H, W), (n, c) = build_fusions_for_tiff(tif_path, out_dir, rng=rng)
+        ratio, fusions, (H, W), (n, c) = build_fusions_for_tiff(tif_path, out_dir, rng=rng)
+        orig_W = int(round(W / ratio))
+        orig_H = int(round(H / ratio))
+        scale_factor = 1.0 / ratio
         fusion_paths = [p for p, _ in fusions]
         if not fusion_paths:
             HFinder_log.warn(f"[{tif_base}] No fused images generated; skipping")
@@ -601,10 +645,14 @@ def run():
         )
 
         # 5) Save JSONs
-        # 5a) consolidated.json
+        # 5a) consolidated.json — in ORIGINAL coords
+        for det in consolidated:
+            det["xyxy"] = rescale_box_xyxy(det["xyxy"], scale_factor)
+            if det.get("segs"):
+                det["segs"] = [rescale_seg_flat(seg, scale_factor) for seg in det["segs"]]
         summary = {
             "tiff": tif_file,
-            "img_size": [int(W), int(H)],
+            "img_size": [int(W * scale_factor), int(H * scale_factor)],
             "vote_iou": iou_vote,
             "vote_min": min_votes,
             "detections": consolidated  # [{cls, votes, conf_mean, xyxy, segs}]
@@ -613,7 +661,7 @@ def run():
         with open(os.path.join(input_folder, f"{tif_base}.consolidated.json"), "w") as f:
             json.dump(summary, f, indent=2)
 
-        # 5b) coco.json
+        # 5b) coco.json — also ORIGINAL coords
         # coco skeleton: {"images": [], "annotations": [], "categories":[...]}
         coco = coco_skeleton(class_ids)
         image_id = 1
@@ -621,8 +669,8 @@ def run():
         coco["images"].append({
             "id": image_id, 
             "file_name": tif_file,
-            "width": int(W),
-            "height": int(H)
+            "width": int(W * scale_factor),
+            "height": int(H * scale_factor)
         })
 
         ann_id = 1
