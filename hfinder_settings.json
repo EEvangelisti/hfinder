@@ -27,6 +27,27 @@
         "default": "cpu",
         "help": "Computation device for PyTorch (e.g. 'cpu', '0' for GPU)."
     },
+    "oi": {
+        "mode": "predict",
+        "type": "float",
+        "long": "overlay_iou",
+        "default": 0.5,
+        "help": "IoU threshold to consider cross-class overlaps."
+    },
+    "op": {
+        "mode": "predict",
+        "type": "str",
+        "long": "overlay_policy",
+        "default": "keep_best",
+        "help": "Policy for cross-class overlaps: keep_best | drop_both | allow_if_whitelisted"
+    },
+    "ow": {
+        "mode": "predict",
+        "type": "str",
+        "long": "overlay_whitelist",
+        "default": "[]",
+        "help": "JSON list of class-name pairs allowed to overlap, e.g. [[\"haustoria\",\"hyphae\"]]."
+    },
     "vi": {
         "mode": "predict",
         "type": "float",
