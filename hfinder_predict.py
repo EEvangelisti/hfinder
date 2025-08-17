@@ -1,4 +1,26 @@
-# Prediction from TIFFs with channel-fusion ensembling + vote consolidation
+"""
+Prediction from TIFFs with channel-fusion ensembling and vote consolidation.
+
+This module implements the prediction stage of HFinder:
+- TIFF files are converted into fused RGB images using the same 
+  channel-combination logic as during training.
+- YOLOv8 predictions are run across all fused images.
+- Detections are consolidated in two stages:
+    1. Cross-class filtering (objects cannot belong to two classes).
+    2. Intra-class consolidation (IoU-based voting).
+- Results are exported in two formats:
+    - consolidated.json (custom format with votes, boxes, polygons),
+    - coco.json (COCO-compatible annotations with boxes + polygons).
+
+Public API
+----------
+- run(): Perform predictions from TIFFs, consolidate detections, and save results.
+- resolve_device(raw): Map user-specified device string/int to a valid PyTorch device.
+- build_fusions_for_tiff(): Generate fused RGB images from a multichannel TIFF.
+- consolidate_boxes_two_stage(): Apply cross-class filtering and intra-class consolidation.
+- coco_skeleton(): Build an empty COCO structure with given categories.
+"""
+
 
 import os
 import cv2
@@ -21,10 +43,16 @@ import hfinder_palette as HFinder_palette
 import hfinder_utils as HFinder_utils
 
 
-# -----------------------
-# Device resolution
-# -----------------------
+
 def resolve_device(raw):
+    """
+    Resolve a device string or integer to a PyTorch-compatible device.
+
+    :param raw: Raw device specifier ("cpu", "auto", int, etc.).
+    :type raw: str | int | None
+    :return: "cpu" or CUDA device index.
+    :rtype: str | int
+    """
     if isinstance(raw, str) and raw.strip().lower() == "cpu":
         return "cpu"
     if isinstance(raw, str) and raw.strip().lower() in ("auto", ""):
@@ -38,13 +66,26 @@ def resolve_device(raw):
         return "cpu"
 
 
-# -----------------------
-# IoU + consolidation
-# -----------------------
+
 def build_whitelist_ids(whitelist_pairs_names, name_to_id):
     """
-    Convert [["haustoria","hyphae"], ...] to set of frozenset({idA,idB}).
-    Order-agnostic.
+    Convert class-name pairs into a set of class-ID pairs (order-agnostic).
+
+    Each input pair (e.g., ["haustoria", "hyphae"]) is mapped to their 
+    corresponding class IDs using `name_to_id`. We wrap the two IDs into a 
+    `frozenset`, which makes the pair:
+      - immutable (safe as a set element or dict key),
+      - order-agnostic (frozenset({a,b}) == frozenset({b,a})).
+
+    This way, (A,B) and (B,A) are treated as the same allowed overlay pair.
+
+    :param whitelist_pairs_names: List of class name pairs, e.g.
+                                  [["haustoria","hyphae"], ["nuclei","chloroplasts"]].
+    :type whitelist_pairs_names: list[list[str]]
+    :param name_to_id: Mapping from class name to class ID, e.g. {"nuclei": 0, "chloroplasts": 1}.
+    :type name_to_id: dict[str, int]
+    :return: Set of frozensets, each containing two class IDs that are whitelisted.
+    :rtype: set[frozenset[int]]
     """
     wl = set()
     for a, b in whitelist_pairs_names:
@@ -53,33 +94,59 @@ def build_whitelist_ids(whitelist_pairs_names, name_to_id):
     return wl
 
 
+
+def area_xyxy(b):
+    """
+    Compute the area (in pixels²) of a bounding box [x1, y1, x2, y2].
+
+    The result is max(0, x2−x1) * max(0, y2−y1), ensuring a non-negative area
+    even if coordinates are partially inverted.
+
+    :param b: Bounding box in xyxy format.
+    :type b: list[float] | np.ndarray
+    :return: Non-negative box area in pixel units.
+    :rtype: float
+    """
+    x1, y1, x2, y2 = b
+    return max(0.0, x2 - x1) * max(0.0, y2 - y1)
+
+
+
 def iou_xyxy(a, b):
-    """IoU entre deux boîtes xyxy (np.array [x1,y1,x2,y2])."""
+    """
+    Compute IoU between two bounding boxes in xyxy format.
+
+    :param a: [x1,y1,x2,y2].
+    :type a: list[float] | np.ndarray
+    :param b: [x1,y1,x2,y2].
+    :type b: list[float] | np.ndarray
+    :return: Intersection-over-Union.
+    :rtype: float
+    """
     xa1, ya1, xa2, ya2 = a
     xb1, yb1, xb2, yb2 = b
     inter_w = max(0.0, min(xa2, xb2) - max(xa1, xb1))
     inter_h = max(0.0, min(ya2, yb2) - max(ya1, yb1))
     inter = inter_w * inter_h
-    area_a = max(0.0, (xa2 - xa1)) * max(0.0, (ya2 - ya1))
-    area_b = max(0.0, (xb2 - xb1)) * max(0.0, (yb2 - yb1))
-    union = area_a + area_b 
-    return inter / (union - inter + 1e-9)
+    union = area_xyxy(a) + area_xyxy(b) - inter
+    return inter / (union + 1e-9)
 
-
-def area_xyxy(b):
-    x1,y1,x2,y2 = b
-    return max(0.0, x2 - x1) * max(0.0, y2 - y1)
 
 
 def cross_class_filter(all_dets, iou_inter, policy, whitelist_ids):
     """
-    all_dets: list of raw detections (each: {"cls": int, "conf": float, "xyxy": np.ndarray, "segs": [...]})
-    Return a filtered list after applying cross-class policy.
+    Apply cross-class suppression to raw detections.
 
-    policy:
-      - "keep_best" : keep higher-confidence among conflicting pair.
-      - "drop_both" : drop both in a conflicting pair.
-      - "allow_if_whitelisted" : if pair allowed, keep both; else apply "keep_best".
+    :param all_dets: List of detections ({cls, conf, xyxy, segs}).
+    :type all_dets: list[dict]
+    :param iou_inter: IoU threshold for inter-class conflict.
+    :type iou_inter: float
+    :param policy: Strategy ("keep_best", "drop_both", "allow_if_whitelisted").
+    :type policy: str
+    :param whitelist_ids: Allowed class-ID pairs.
+    :type whitelist_ids: set[frozenset[int]]
+    :return: Filtered list of detections.
+    :rtype: list[dict]
     """
     if not all_dets:
         return []
@@ -124,19 +191,22 @@ def cross_class_filter(all_dets, iou_inter, policy, whitelist_ids):
 
     survivors = [all_dets[i] for i in range(len(all_dets)) if not suppressed[i]]
     return survivors
-    
-    
+
+
+
 def intra_class_consolidate_keep_best(dets, iou_intra=0.5, min_votes=2):
-    def iou_xyxy(a, b):
-        ax1, ay1, ax2, ay2 = a
-        bx1, by1, bx2, by2 = b
-        iw = max(0.0, min(ax2, bx2) - max(ax1, bx1))
-        ih = max(0.0, min(ay2, by2) - max(ay1, by1))
-        inter = iw * ih
-        area_a = max(0.0, ax2 - ax1) * max(0.0, ay2 - ay1)
-        area_b = max(0.0, bx2 - bx1) * max(0.0, by2 - by1)
-        denom = area_a + area_b - inter + 1e-9
-        return inter / denom
+    """
+    Consolidate detections within each class by IoU voting.
+
+    :param dets: Detections (same class handled separately).
+    :type dets: list[dict]
+    :param iou_intra: IoU threshold for grouping same-class detections.
+    :type iou_intra: float
+    :param min_votes: Minimum votes to keep a cluster.
+    :type min_votes: int
+    :return: Consolidated detections per class.
+    :rtype: list[dict]
+    """
 
     by_class = defaultdict(list)
     for d in dets:
@@ -177,34 +247,28 @@ def intra_class_consolidate_keep_best(dets, iou_intra=0.5, min_votes=2):
     
     
 
-def consolidate_boxes_two_stage(
-    all_dets,
-    iou_inter=0.5,      # cross-class IoU
-    iou_intra=0.5,      # intra-class IoU
-    min_votes=2,
-    whitelist_ids=frozenset(),
-    policy="keep_best"
-):
+def consolidate_boxes_two_stage(all_dets, iou_inter=0.5, iou_intra=0.5,
+                                min_votes=2, whitelist_ids=frozenset(),
+                                policy="keep_best"):
     """
-    Two-stage consolidation:
-      A) Cross-class suppression (objects cannot be two different classes):
-         if IoU > iou_inter between different classes, keep the higher-confidence one.
-      B) Intra-class consolidation:
-         cluster by IoU >= iou_intra; for each cluster (votes >= min_votes),
-         return the highest-confidence member's bbox and polygons.
+    Two-stage consolidation of detections:
+      A) Cross-class filtering,
+      B) Intra-class IoU-based consolidation.
 
-    Input
-    -----
-    all_dets : list[dict]
-        Each det: {"cls": int, "conf": float,
-                   "xyxy": np.ndarray([x1,y1,x2,y2], float32),
-                   "segs": list[list[float]]}  # polygons may be empty
-
-    Output
-    ------
-    list[dict]
-        [{"cls": int, "votes": int, "conf": float,
-          "xyxy": list[float], "segs": list[list[float]]}, ...]
+    :param all_dets: Raw detections ({cls, conf, xyxy, segs}).
+    :type all_dets: list[dict]
+    :param iou_inter: IoU threshold for cross-class conflicts.
+    :type iou_inter: float
+    :param iou_intra: IoU threshold for intra-class consolidation.
+    :type iou_intra: float
+    :param min_votes: Minimum votes for a cluster to be kept.
+    :type min_votes: int
+    :param whitelist_ids: Set of class-ID pairs allowed to overlap.
+    :type whitelist_ids: set[frozenset[int]]
+    :param policy: Cross-class conflict policy.
+    :type policy: str
+    :return: Consolidated detections.
+    :rtype: list[dict]
     """
 
     survivors = cross_class_filter(
@@ -223,16 +287,19 @@ def consolidate_boxes_two_stage(
     return consolidated
 
 
-# -----------------------
-# TIFF → fused images
-# -----------------------
+
 def build_fusions_for_tiff(tif_path, out_dir, rng=None):
     """
-    Lit un TIFF, le redimensionne (comme au train), génère des fusions RGB
-    pour toutes les combinaisons 1..3 canaux (par tranche Z si n>1),
-    avec éventuels canaux "bruit" de la même tranche.
+    Build fused RGB images from a multichannel TIFF.
 
-    Retourne: [(img_path, combo_tuple)], dims (H,W), (n,c)
+    :param tif_path: Path to input TIFF.
+    :type tif_path: str
+    :param out_dir: Directory where fusions are saved.
+    :type out_dir: str
+    :param rng: Optional random generator for reproducibility.
+    :type rng: random.Random | None
+    :return: (list of (img_path, channels), (H,W), (n,c))
+    :rtype: tuple[list[tuple[str,tuple[int]]], tuple[int,int], tuple[int,int]]
     """
     if rng is None:
         rng = random.Random(0)
@@ -284,13 +351,31 @@ def build_fusions_for_tiff(tif_path, out_dir, rng=None):
 
 
 def coco_skeleton(categories):
-    """Retourne un dict COCO vide avec la liste des catégories."""
+    """
+    Create an empty COCO JSON structure.
+
+    :param categories: Mapping name->id.
+    :type categories: dict[str,int]
+    :return: COCO dict with categories.
+    :rtype: dict
+    """
     cats = [{"id": cid, "name": name, "supercategory": "hf"} 
             for name, cid in sorted(categories.items(), key=lambda x: x[1])]
     return {"images": [], "annotations": [], "categories": cats}
 
+
+
 def poly_area_xy(poly):
-    """Aire d’un polygone (liste [x1,y1,...]) en px^2 (via Shoelace)."""
+    """
+    Compute the polygon area (in pixels²) from a flattened [x1, y1, x2, y2, ...] list.
+
+    Uses the shoelace formula. Degenerate inputs (fewer than 3 points) return 0.0.
+
+    :param poly: Flattened polygon coordinates [x1, y1, x2, y2, ...].
+    :type poly: list[float] | np.ndarray
+    :return: Non-negative polygon area in pixel units.
+    :rtype: float
+    """
     if not poly or len(poly) < 6: 
         return 0.0
     it = iter(poly)
@@ -298,23 +383,35 @@ def poly_area_xy(poly):
     x = [p[0] for p in pts]; y = [p[1] for p in pts]
     return 0.5 * abs(sum(x[i]*y[(i+1)%len(pts)] - x[(i+1)%len(pts)]*y[i] for i in range(len(pts))))
 
+
+
 def bbox_xyxy_to_xywh(b):
-    x1,y1,x2,y2 = map(float, b)
+    """
+    Compute the area (in pixels²) of a bounding box [x1, y1, x2, y2].
+
+    The result is max(0, x2−x1) * max(0, y2−y1), ensuring a non-negative area
+    even if coordinates are partially inverted.
+
+    :param b: Bounding box in xyxy format.
+    :type b: list[float] | np.ndarray
+    :return: Non-negative box area in pixel units.
+    :rtype: float
+    """
+    x1, y1, x2, y2 = map(float, b)
     return [x1, y1, max(0.0, x2 - x1), max(0.0, y2 - y1)]
 
 
 
-# -----------------------
-# Main predict
-# -----------------------
 def run():
     """
-    Predict from TIFFs with channel-fusion ensembling and vote consolidation.
-    For each TIFF:
-      - generate fused RGB images (all valid channel combos, same as training),
-      - run YOLO on all fusions,
-      - consolidate detections across fusions (IoU voting),
-      - export both consolidated.json and coco.json (boxes + polygons).
+    Run full prediction pipeline:
+      - Load YOLO model.
+      - Generate fused images from TIFFs.
+      - Predict on fusions.
+      - Consolidate detections.
+      - Save outputs (consolidated.json, coco.json).
+
+    :rtype: None
     """
     # Weights / model
     weights = HFinder_settings.get("weights")
@@ -332,38 +429,36 @@ def run():
     iou_vote = float(HFinder_settings.get("vote_iou") or 0.5)
     min_votes = int(HFinder_settings.get("vote_min") or 2)
 
-    # Class names from YAML (training dataset YAML)
-    yaml_path = HFinder_settings.get("yaml") or os.path.join(HFinder_folders.get_dataset_dir(), "dataset.yaml")
+    # Retrieve class names from a YAML file (e.g., generated during training)
+    yaml_path = HFinder_settings.get("yaml")
     if not os.path.isfile(yaml_path):
-        HFinder_log.fail(f"dataset YAML not found: {yaml_path}")
+        HFinder_log.fail(f"YAML file not found: {yaml_path}")
     class_ids = HFinder_utils.load_class_definitions_from_yaml(yaml_path)  # {"name": id}
 
-    overlay_iou = HFinder_settings.get("cross_iou") or 0.5
+    # Cross-class and inter-class settings
+    cross_iou = float(HFinder_settings.get("cross_iou")) or 0.5
     overlay_policy = (HFinder_settings.get("overlay_policy") or "keep_best").lower()
     try:
         wl_raw = HFinder_settings.get("overlay_whitelist") or "[]"
         wl_pairs = json.loads(wl_raw)  # e.g. [["haustoria","hyphae"]]
     except Exception:
         wl_pairs = []
-
     whitelist_ids = build_whitelist_ids(wl_pairs, class_ids)  # set of frozenset({idA,idB})
-
     if wl_pairs and not whitelist_ids:
         HFinder_log.warn("overlay_whitelist provided but no names matched class IDs from YAML.")
-
-    HFinder_log.info(f"Overlay policy={overlay_policy}, IoU={overlay_iou}, whitelist_pairs={len(wl_pairs)}")
+    HFinder_log.info(f"Overlay policy={overlay_policy}, IoU={cross_iou}, whitelist_pairs={len(wl_pairs)}")
 
     if device == "cpu":
         torch.set_num_threads(max(1, (os.cpu_count() or 2) // 2))
         torch.set_num_interop_threads(1)
 
     # Input TIFFs
-    folder = HFinder_settings.get("tiff_dir")
-    if not folder or not os.path.isdir(folder):
-        HFinder_log.fail(f"Invalid 'tiff_dir': {folder}")
-    tiffs = sorted(glob(os.path.join(folder, "*.tif")) + glob(os.path.join(folder, "*.tiff")))
+    input_folder = HFinder_settings.get("tiff_dir")
+    if not input_folder or not os.path.isdir(input_folder):
+        HFinder_log.fail(f"Invalid 'tiff_dir': {input_folder}")
+    tiffs = sorted(glob(os.path.join(input_folder, "*.tif")) + glob(os.path.join(input_folder, "*.tiff")))
     if not tiffs:
-        HFinder_log.warn(f"No TIFF files found in {folder}")
+        HFinder_log.warn(f"No TIFF files found in {input_folder}")
         return
 
     project = HFinder_folders.get_runs_dir()
@@ -390,7 +485,7 @@ def run():
             batch=batch,
             save=True,                # saves overlays into runs/predict/<base>/
             project=project,
-            name=f"predict/{base}",
+            name=os.path.join("predict", f"{base}"),
             conf=conf,
             imgsz=imgsz,
             device=device,
@@ -461,9 +556,9 @@ def run():
         # 4) Consolidation (IoU voting) — consolidate_boxes keeps best_with_segs when available
         consolidated = consolidate_boxes_two_stage(
             all_dets,
-            iou_inter=float(overlay_iou),
-            iou_intra=float(HFinder_settings.get("vote_iou") or 0.5),
-            min_votes=int(HFinder_settings.get("vote_min") or 2),
+            iou_inter=cross_iou,
+            iou_intra=iou_vote,
+            min_votes=min_votes,
             whitelist_ids=whitelist_ids,
             policy=overlay_policy
         )
@@ -477,26 +572,16 @@ def run():
             "vote_min": min_votes,
             "detections": consolidated  # [{cls, votes, conf_mean, xyxy, segs}]
         }
-        with open(os.path.join(out_dir, "consolidated.json"), "w") as f:
+        
+        ref_img_rel = os.path.basename(fusion_paths[0])
+        base = os.path.splitext(ref_img_rel)[0]
+        with open(os.path.join(input_folder, f"{base}.consolidated.json"), "w") as f:
             json.dump(summary, f, indent=2)
 
         # 5b) coco.json
         coco = coco_skeleton(class_ids)  # {"images": [], "annotations": [], "categories":[...]}
-        ref_img_rel = os.path.basename(fusion_paths[0])
         image_id = 1
         coco["images"].append({"id": image_id, "file_name": ref_img_rel, "width": int(W), "height": int(H)})
-
-        def bbox_xyxy_to_xywh(b):
-            x1, y1, x2, y2 = map(float, b)
-            return [x1, y1, max(0.0, x2 - x1), max(0.0, y2 - y1)]
-
-        def poly_area_xy(poly):
-            if not poly or len(poly) < 6:
-                return 0.0
-            it = iter(poly)
-            pts = [(float(x), float(next(it))) for x in it]
-            x = [p[0] for p in pts]; y = [p[1] for p in pts]
-            return 0.5 * abs(sum(x[i]*y[(i+1)%len(pts)] - x[(i+1)%len(pts)]*y[i] for i in range(len(pts))))
 
         ann_id = 1
         for det in consolidated:
@@ -521,7 +606,7 @@ def run():
             })
             ann_id += 1
 
-        with open(os.path.join(out_dir, "coco.json"), "w") as f:
+        with open(os.path.join(input_folder, f"{base}.coco.json"), "w") as f:
             json.dump(coco, f, indent=2)
 
         # 6) Logs
@@ -530,8 +615,5 @@ def run():
             f"[{base}] Consolidated {sum(counts.values())} detections across "
             f"{len(set(counts.elements()))} classes; COCO & consolidated saved."
         )
-
-
-
 
 
