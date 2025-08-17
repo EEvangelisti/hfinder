@@ -403,6 +403,64 @@ def bbox_xyxy_to_xywh(b):
 
 
 
+def polys_from_xy(inst_xy):
+    """
+    Convert YOLO mask polygon(s) into COCO-style flattened lists.
+
+    A YOLO result may store instance polygons either as:
+      - a single (N,2) numpy array of x,y coordinates, or
+      - a list of such arrays (for multiple disjoint polygons).
+
+    This function normalizes the input into a list of flattened
+    [x1, y1, x2, y2, ..., xn, yn] lists.
+
+    :param inst_xy: A (N,2) array or list of arrays with polygon vertices.
+    :type inst_xy: numpy.ndarray | list[numpy.ndarray] | None
+    :return: A list of polygons, each represented as a flattened list of floats.
+    :rtype: list[list[float]]
+    """
+    if inst_xy is None:
+        return []
+    polys = inst_xy if isinstance(inst_xy, (list, tuple)) else [inst_xy]
+    flats = []
+    for poly in polys:
+        arr = np.asarray(poly)
+        if arr.ndim != 2 or arr.shape[0] < 3:
+            continue
+        flats.append(arr.reshape(-1).tolist())
+    return flats
+
+
+
+def polys_from_mask_i(result_obj, i):
+    """
+    Extract polygon(s) from the i-th mask of a YOLO result object.
+
+    If YOLO does not provide polygons (or if they are empty),
+    this function derives them from the binary mask using OpenCV contours.
+    The mask is first morphologically closed to smooth small gaps.
+
+    :param result_obj: YOLO result object with .masks.data attribute.
+    :type result_obj: ultralytics.engine.results.Results
+    :param i: Index of the instance mask to convert.
+    :type i: int
+    :return: A list of polygons (flattened [x1,y1,...]) extracted from the mask.
+    :rtype: list[list[float]]
+    """
+    if getattr(result_obj, "masks", None) is None or getattr(result_obj.masks, "data", None) is None:
+        return []
+    m_i = result_obj.masks.data[i].detach().cpu().numpy().astype(np.uint8) * 255
+    m_i = cv2.morphologyEx(m_i, cv2.MORPH_CLOSE, np.ones((3, 3), np.uint8))
+    cnts, _ = cv2.findContours(m_i, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+    flats = []
+    for c in cnts:
+        if c.shape[0] < 3 or cv2.contourArea(c) < 10:
+            continue
+        flats.append(c.reshape(-1, 2).astype(float).reshape(-1).tolist())
+    return flats
+
+
+
 def run():
     """
     Run full prediction pipeline:
@@ -449,6 +507,7 @@ def run():
         HFinder_log.warn("overlay_whitelist provided but no names matched class IDs from YAML.")
     HFinder_log.info(f"Overlay policy={overlay_policy}, IoU={cross_iou}, whitelist_pairs={len(wl_pairs)}")
 
+    # Torch settings
     if device == "cpu":
         torch.set_num_threads(max(1, (os.cpu_count() or 2) // 2))
         torch.set_num_interop_threads(1)
@@ -467,63 +526,33 @@ def run():
 
     # ---- TIFF loop -----------------------------------------------------------
     for tif_path in tiffs:
-        base = os.path.splitext(os.path.basename(tif_path))[0]
-        out_dir = os.path.join(project, "predict", base)
+        tif_file = os.path.basename(tif_path)
+        tif_base = os.path.splitext(tif_file)[0]
+        out_dir = os.path.join(project, "predict", tif_base)
         os.makedirs(out_dir, exist_ok=True)
 
         # 1) Generate fused RGB images (same logic as training)
-        rng = random.Random(base)  # deterministic per TIFF
+        rng = random.Random(tif_base)  # deterministic per TIFF
         fusions, (H, W), (n, c) = build_fusions_for_tiff(tif_path, out_dir, rng=rng)
         fusion_paths = [p for p, _ in fusions]
         if not fusion_paths:
-            HFinder_log.warn(f"[{base}] No fused images generated; skipping")
+            HFinder_log.warn(f"[{tif_base}] No fused images generated; skipping")
             continue
-        HFinder_log.info(f"[{base}] Generated {len(fusion_paths)} fused images (n={n}, c={c})")
+        HFinder_log.info(f"[{tif_base}] Generated {len(fusion_paths)} fused images (n={n}, c={c})")
 
         # 2) Run predictions on all fusions
         results = model.predict(
             source=fusion_paths,
             batch=batch,
-            save=True,                # saves overlays into runs/predict/<base>/
+            save=True,            # saves overlays into runs/predict/<tif_base>/
             project=project,
-            name=os.path.join("predict", f"{base}"),
+            name=os.path.join("predict", tif_base),
             conf=conf,
             imgsz=imgsz,
             device=device,
             verbose=False,
-            retina_masks=True         # better polygon quality
+            retina_masks=True     # better polygon quality
         )
-
-        # Helpers for polygons
-        def polys_from_xy(inst_xy):
-            """
-            inst_xy can be (N,2) or a list of (N,2).
-            Return list of flattened polygons: [[x1,y1,...], ...]
-            """
-            if inst_xy is None:
-                return []
-            polys = inst_xy if isinstance(inst_xy, (list, tuple)) else [inst_xy]
-            flats = []
-            for poly in polys:
-                arr = np.asarray(poly)
-                if arr.ndim != 2 or arr.shape[0] < 3:
-                    continue
-                flats.append(arr.reshape(-1).tolist())
-            return flats
-
-        def polys_from_mask_i(result_obj, i):
-            """Fallback: contours from binary mask i."""
-            if getattr(result_obj, "masks", None) is None or getattr(result_obj.masks, "data", None) is None:
-                return []
-            m_i = result_obj.masks.data[i].detach().cpu().numpy().astype(np.uint8) * 255
-            m_i = cv2.morphologyEx(m_i, cv2.MORPH_CLOSE, np.ones((3, 3), np.uint8))
-            cnts, _ = cv2.findContours(m_i, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-            flats = []
-            for c in cnts:
-                if c.shape[0] < 3 or cv2.contourArea(c) < 10:
-                    continue
-                flats.append(c.reshape(-1, 2).astype(float).reshape(-1).tolist())
-            return flats
 
         # 3) Collect detections (boxes + polygons) for IoU voting
         all_dets = []
@@ -540,9 +569,16 @@ def run():
 
             for i, (bb, sc, cc) in enumerate(zip(xyxy, confs, clss)):
                 # Clamp to (W,H)
-                x1 = float(max(0.0, min(bb[0], W))); y1 = float(max(0.0, min(bb[1], H)))
-                x2 = float(max(0.0, min(bb[2], W))); y2 = float(max(0.0, min(bb[3], H)))
-                det = {"cls": int(cc), "conf": float(sc), "xyxy": np.array([x1, y1, x2, y2], dtype=np.float32), "segs": []}
+                x1 = float(max(0.0, min(bb[0], W)))
+                y1 = float(max(0.0, min(bb[1], H)))
+                x2 = float(max(0.0, min(bb[2], W)))
+                y2 = float(max(0.0, min(bb[3], H)))
+                det = {
+                    "cls": int(cc),
+                    "conf": float(sc),
+                    "xyxy": np.array([x1, y1, x2, y2], dtype=np.float32),
+                    "segs": []
+                }
 
                 # 1) Try masks.xy (handles (N,2) OR list of (N,2))
                 if xy_polys is not None and i < len(xy_polys) and xy_polys[i] is not None:
@@ -567,22 +603,27 @@ def run():
         # 5) Save JSONs
         # 5a) consolidated.json
         summary = {
-            "tiff": os.path.basename(tif_path),
+            "tiff": tif_file,
             "img_size": [int(W), int(H)],
             "vote_iou": iou_vote,
             "vote_min": min_votes,
             "detections": consolidated  # [{cls, votes, conf_mean, xyxy, segs}]
         }
         
-        ref_img_rel = os.path.basename(fusion_paths[0])
-        base = os.path.splitext(ref_img_rel)[0]
-        with open(os.path.join(input_folder, f"{base}.consolidated.json"), "w") as f:
+        with open(os.path.join(input_folder, f"{tif_base}.consolidated.json"), "w") as f:
             json.dump(summary, f, indent=2)
 
         # 5b) coco.json
-        coco = coco_skeleton(class_ids)  # {"images": [], "annotations": [], "categories":[...]}
+        # coco skeleton: {"images": [], "annotations": [], "categories":[...]}
+        coco = coco_skeleton(class_ids)
         image_id = 1
-        coco["images"].append({"id": image_id, "file_name": ref_img_rel, "width": int(W), "height": int(H)})
+        ref_img_rel = os.path.basename(fusion_paths[0])
+        coco["images"].append({
+            "id": image_id, 
+            "file_name": tif_file,
+            "width": int(W),
+            "height": int(H)
+        })
 
         ann_id = 1
         for det in consolidated:
@@ -600,21 +641,20 @@ def run():
                 "category_id": int(det["cls"]),
                 "bbox": [round(v, 2) for v in bbox_xywh],
                 "area": round(area, 2),
-                "segmentation": segmentation,  # list of [x1,y1,...]
+                "segmentation": segmentation,
                 "iscrowd": 0,
                 "confidence": round(det["conf_mean"], 4),
                 "votes": int(det["votes"])
             })
             ann_id += 1
 
-        with open(os.path.join(input_folder, f"{base}.coco.json"), "w") as f:
+        with open(os.path.join(input_folder, f"{tif_base}.coco.json"), "w") as f:
             json.dump(coco, f, indent=2)
 
         # 6) Logs
         counts = Counter([d["cls"] for d in consolidated])
         HFinder_log.info(
-            f"[{base}] Consolidated {sum(counts.values())} detections across "
+            f"[{tif_base}] Consolidated {sum(counts.values())} detections across "
             f"{len(set(counts.elements()))} classes; COCO & consolidated saved."
         )
-
 
