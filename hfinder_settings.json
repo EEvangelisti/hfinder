@@ -85,7 +85,7 @@
         "mode": "predict",
         "type": "str",
         "long": "weights",
-        "default": "yolov8n-seg.pt",
+        "default": "weights/hfinder-yolov8n-seg.pt",
         "help": "Weights for prediction."
     },
     "e": {

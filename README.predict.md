@@ -42,7 +42,7 @@ results visually, and refine annotations if needed.
 |Command|Description|Default value|
 |-|-|-|
 |`-d <path>` or<br>`--tiff_dir <path>`|Path to the folder containing the training image files or the images to predict|data|
-|`-w <path>` or<br>`--weights <path>`|Weights for prediction|yolov8n-seg.pt|
+|`-w <path>` or<br>`--weights <path>`|Weights for prediction|weights/hfinder-yolov8n-seg.pt|
 |`-y <path>` or<br>`--yaml <path>`|Path to the training dataset.yaml (used to resolve class names)|dataset.yaml|
 |`-b <int>` or<br>`--batch <int>`|Batch size used for running YOLO predictions|8|
 |`-dbg` or<br>`--debug`|Enable debug mode to display additional logs and diagnostic information|Inactive|
