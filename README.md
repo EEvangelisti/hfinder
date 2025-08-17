@@ -1,23 +1,39 @@
 # HFinder
 
-HFinder is a modular and semi-automated pipeline for the detection and segmentation of filamentous microbes (such as fungi or oomycetes) and their specialized infection structures (e.g., haustoria) in confocal microscopy images. Designed for flexibility and extensibility, it supports both automated detection using [YOLOv8](https://yolov8.com/) and manual correction workflows when needed.
+HFinder is a modular and extensible pipeline for the detection, segmentation, 
+and analysis of filamentous microbes (e.g., fungi, oomycetes) and their 
+infection structures (such as haustoria) in confocal microscopy images. Built 
+around [YOLOv8](https://yolov8.com/), it provides a complete workflow from raw 
+multi-channel TIFFs to consolidated predictions and ready-to-use annotations.
 
-The pipeline handles:
-
-- Image preprocessing and composite generation from multi-channel TIFF files.
-- Binary mask creation and contour extraction for filamentous structures.
-- Conversion to YOLO-compatible annotation formats for training object detection models.
-- Training and evaluation of segmentation models via Ultralytics YOLOv8.
-- Integration of external annotations (e.g., from [Makesense AI](https://www.makesense.ai/)) with rescaling support.
-
-HFinder is intended for researchers studying plant–microbe interactions and host colonization dynamics, providing tools to accelerate the annotation and analysis of large image datasets.
+The pipeline integrates both automated machine learning and manual correction, 
+making it suitable for large-scale studies as well as expert-guided analysis. 
+It supports dataset generation, model training, multi-fusion prediction, and 
+result consolidation into formats compatible with external tools such as 
+[Makesense AI](https://www.makesense.ai/).
 
 ## Key Features
-- **Multi-channel TIFF support**: Automatically extracts, thresholds, or segments specific channels within multi-frame TIFFs. Each channel or z-slice can be treated independently or combined based on user-defined instructions.
-- **Flexible annotation workflow**: Supports both automatic segmentation (via thresholding) and custom annotations (via JSON polygons), enabling hybrid workflows.
-- **YOLOv8-compatible dataset generation**: Converts raw TIFF data into structured datasets (images, masks, metadata) for direct use in YOLOv8 training pipelines, including automatic generation of dataset.yaml.
-- **Class-aware image mapping**: Supports class-specific instructions, allowing different segmentation strategies per class or per image.
+- **Multi-channel TIFF processing**: Automatically generates fused RGB 
+composites from arbitrary channel combinations, reproducing training 
+conditions and enabling robust ensembling.
+- **Flexible annotation workflows**: Combine automated segmentation, YOLO-based 
+detection, and manual polygon annotations. External annotations can be imported 
+and rescaled seamlessly.
+- **End-to-end YOLOv8 support**: Create YOLO-ready datasets, train new models, 
+evaluate performance, and export predictions in both consolidated JSON and 
+COCO JSON formats (containing boxes and polygons).
+- **Prediction with ensembling and voting**: Runs detection across multiple 
+channel fusions, then consolidates results with intra- and inter-class IoU 
+voting strategies, ensuring consistent and biologically meaningful predictions.
+- **Class-aware customization**: Define per-class segmentation strategies, 
+allow or forbid overlaps between classes, and control prediction thresholds for 
+fine-grained analysis.
+- **Integration with external tools**: Results can be directly visualized and 
+corrected in Makesense.ai or other COCO-compatible annotation editors.
 
+HFinder is designed for researchers studying plant–microbe interactions and 
+host colonization dynamics, providing a reproducible and semi-automated 
+framework to accelerate annotation, training, and large-scale image analysis.
 
 ## Installation
 
