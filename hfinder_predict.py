@@ -324,38 +324,38 @@ def build_fusions_for_tiff(tif_path, out_dir, rng=None):
     base = os.path.splitext(os.path.basename(tif_path))[0]
 
     # Combinaisons 1-3 par tranche Z, comme pendant l'entraînement
-    combos = HFinder_utils.power_set(all_channels, n, c)  # déjà par tranche si n>1
+    #combos = HFinder_utils.power_set(all_channels, n, c)  # déjà par tranche si n>1
 
-    for combo in combos:
-        combo = tuple(sorted(combo))
+    for i, channel in enumerate(all_channels):
+        #combo = tuple(sorted(combo))
         # Canaux "bruit" candidats = canaux de la même tranche non dans combo
-        noise_candidates = list(set(all_channels) - set(combo))
+        #noise_candidates = list(set(all_channels) - set(combo))
         if n > 1:
             ref_ch = min(combo)
             series_index = (ref_ch - 1) // c
             allowed_noise = [series_index * c + i + 1 for i in range(c)]
             noise_candidates = sorted(list(set(noise_candidates) & set(allowed_noise)))
         # Échantillonnage aléatoire 0..K bruits
-        k = rng.randint(0, len(noise_candidates)) if noise_candidates else 0
-        noise = rng.sample(noise_candidates, k) if k > 0 else []
+        #k = rng.randint(0, len(noise_candidates)) if noise_candidates else 0
+        #noise = rng.sample(noise_candidates, k) if k > 0 else []
 
         # Palette déterministe (hash sur le nom de fichier de sortie)
-        fname = f"{base}_" + "_".join(map(str, combo)) + ".jpg"
+        fname = f"{base}_{i}.jpg"
         palette = HFinder_palette.get_random_palette(hash_data=fname)
 
         rgb = HFinder_ImageOps.compose_hue_fusion(
             channels=channels_dict,
-            selected_channels=list(combo),
+            selected_channels=[all_channels[i]],
             palette=palette,
-            noise_channels=noise
+            noise_channels=None
         )
 
         out_path = os.path.join(out_dir, fname)
         Image.fromarray(rgb).save(out_path, "JPEG")
         fusions.append({
             "path": out_path,
-            "combo": combo,          # tuple[int, ...] selected channels
-            "noise": noise,          # list[int] noise channels (same Z-slice)
+            "combo": (i,i),          # tuple[int, ...] selected channels
+            "noise": [],          # list[int] noise channels (same Z-slice)
             "palette": palette       # for traceability (optional)
         })
 
