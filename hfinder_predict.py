@@ -323,23 +323,13 @@ def build_fusions_for_tiff(tif_path, out_dir, rng=None):
     fusions = []
     base = os.path.splitext(os.path.basename(tif_path))[0]
 
-    # Combinaisons 1-3 par tranche Z, comme pendant l'entraînement
-    #combos = HFinder_utils.power_set(all_channels, n, c)  # déjà par tranche si n>1
-
     for i, channel in enumerate(all_channels):
-        #combo = tuple(sorted(combo))
-        # Canaux "bruit" candidats = canaux de la même tranche non dans combo
-        #noise_candidates = list(set(all_channels) - set(combo))
         if n > 1:
             ref_ch = min(combo)
             series_index = (ref_ch - 1) // c
             allowed_noise = [series_index * c + i + 1 for i in range(c)]
             noise_candidates = sorted(list(set(noise_candidates) & set(allowed_noise)))
-        # Échantillonnage aléatoire 0..K bruits
-        #k = rng.randint(0, len(noise_candidates)) if noise_candidates else 0
-        #noise = rng.sample(noise_candidates, k) if k > 0 else []
 
-        # Palette déterministe (hash sur le nom de fichier de sortie)
         fname = f"{base}_{i}.jpg"
         palette = HFinder_palette.get_random_palette(hash_data=fname)
 
@@ -354,9 +344,8 @@ def build_fusions_for_tiff(tif_path, out_dir, rng=None):
         Image.fromarray(rgb).save(out_path, "JPEG")
         fusions.append({
             "path": out_path,
-            "combo": (i,i),          # tuple[int, ...] selected channels
-            "noise": [],          # list[int] noise channels (same Z-slice)
-            "palette": palette       # for traceability (optional)
+            "channel": i,
+            "palette": palette
         })
 
     # Dimensions (H,W)
@@ -539,20 +528,20 @@ def run():
     # Settings
     conf = HFinder_settings.get("conf") or 0.25
     imgsz = HFinder_settings.get("size") or 640
-    device = resolve_device(HFinder_settings.get("device"))
     batch = HFinder_settings.get("batch") or 8
-    iou_vote = float(HFinder_settings.get("vote_iou") or 0.5)
-    min_votes = int(HFinder_settings.get("vote_min") or 2)
+    #iou_vote = float(HFinder_settings.get("vote_iou") or 0.5)
+    #min_votes = int(HFinder_settings.get("vote_min") or 2)
 
     # Retrieve class names from a YAML file (e.g., generated during training)
     yaml_path = HFinder_settings.get("yaml")
     if not os.path.isfile(yaml_path):
         HFinder_log.fail(f"YAML file not found: {yaml_path}")
     class_ids = HFinder_utils.load_class_definitions_from_yaml(yaml_path)  # {"name": id}
+    id_to_name = {v: k for k, v in class_ids.items()}
 
     # Cross-class and inter-class settings
-    cross_iou = float(HFinder_settings.get("cross_iou")) or 0.5
-    overlay_policy = (HFinder_settings.get("overlay_policy") or "keep_best").lower()
+    #cross_iou = float(HFinder_settings.get("cross_iou")) or 0.5
+    #overlay_policy = (HFinder_settings.get("overlay_policy") or "keep_best").lower()
     try:
         wl_raw = HFinder_settings.get("overlay_whitelist") or "[]"
         wl_pairs = json.loads(wl_raw)  # e.g. [["haustoria","hyphae"]]
@@ -561,9 +550,9 @@ def run():
     whitelist_ids = build_whitelist_ids(wl_pairs, class_ids)  # set of frozenset({idA,idB})
     if wl_pairs and not whitelist_ids:
         HFinder_log.warn("overlay_whitelist provided but no names matched class IDs from YAML.")
-    HFinder_log.info(f"Overlay policy={overlay_policy}, IoU={cross_iou}, whitelist_pairs={len(wl_pairs)}")
 
     # Torch settings
+    device = resolve_device(HFinder_settings.get("device"))
     if device == "cpu":
         torch.set_num_threads(max(1, (os.cpu_count() or 2) // 2))
         torch.set_num_interop_threads(1)
@@ -571,7 +560,7 @@ def run():
     # Input TIFFs
     input_folder = HFinder_settings.get("tiff_dir")
     if not input_folder or not os.path.isdir(input_folder):
-        HFinder_log.fail(f"Invalid 'tiff_dir': {input_folder}")
+        HFinder_log.fail(f"Invalid directory: {input_folder}")
     tiffs = sorted(glob(os.path.join(input_folder, "*.tif")) + glob(os.path.join(input_folder, "*.tiff")))
     if not tiffs:
         HFinder_log.warn(f"No TIFF files found in {input_folder}")
@@ -596,9 +585,9 @@ def run():
         fusion_paths = [f["path"] for f in fusions]
         fusion_meta = {f["path"]: f for f in fusions}
         if not fusion_paths:
-            HFinder_log.warn(f"[{tif_base}] No fused images generated; skipping")
+            HFinder_log.warn(f"Skipping file '{tif_file}'")
             continue
-        HFinder_log.info(f"[{tif_base}] Generated {len(fusion_paths)} fused images (n={n}, c={c})")
+        HFinder_log.info(f"Processing '{tif_file}'")
 
         # 2) Run predictions on all fusions
         results = model.predict(
@@ -614,13 +603,13 @@ def run():
             retina_masks=True     # better polygon quality
         )
 
-        # 3) Collect detections (boxes + polygons) for IoU voting
+        # 3) Collect detections (boxes + polygons)
         all_dets = []
         for img_path, r in zip(fusion_paths, results):
             if getattr(r, "boxes", None) is None or r.boxes is None or r.boxes.shape[0] == 0:
                 continue
             meta = fusion_meta.get(img_path, {})
-            used_channels = list(meta.get("combo", []))  # the channels that formed this RGB
+            channel = meta.get("channel")
             xyxy = r.boxes.xyxy.detach().cpu().numpy()
             confs = r.boxes.conf.detach().cpu().numpy()
             clss = r.boxes.cls.detach().cpu().numpy().astype(int)
@@ -640,7 +629,7 @@ def run():
                     "conf": float(sc),
                     "xyxy": np.array([x1, y1, x2, y2], dtype=np.float32),
                     "segs": [],
-                    "channels": used_channels
+                    "channel": channel
                 }
 
                 # 1) Try masks.xy (handles (N,2) OR list of (N,2))
@@ -653,77 +642,103 @@ def run():
 
                 all_dets.append(det)
 
-        # 4) Consolidation (IoU voting) — consolidate_boxes keeps best_with_segs when available
-        consolidated = consolidate_boxes_two_stage(
-            all_dets,
-            iou_inter=cross_iou,
-            iou_intra=iou_vote,
-            min_votes=min_votes,
-            whitelist_ids=whitelist_ids,
-            policy=overlay_policy
-        )
+        # Generating detection subsets for each channel
+        subsets = []
+        for ch in range(len(fusions)):
+            det_subset = [det for det in all_dets if det["channel"] == ch]
+            if not det_subset:
+                continue
+            subsets.append((ch, det_subset))
 
-        # 5) Save JSONs
-        # 5a) consolidated.json — in ORIGINAL coords
-        for det in consolidated:
-            det["xyxy"] = rescale_box_xyxy(det["xyxy"], scale_factor)
-            if det.get("segs"):
-                det["segs"] = [rescale_seg_flat(seg, scale_factor) for seg in det["segs"]]
-        summary = {
-            "tiff": tif_file,
-            "img_size": [int(W * scale_factor), int(H * scale_factor)],
-            "vote_iou": iou_vote,
-            "vote_min": min_votes,
-            "detections": consolidated  # [{cls, votes, conf_mean, xyxy, segs}]
-        }
-        
-        with open(os.path.join(input_folder, f"{tif_base}.consolidated.json"), "w") as f:
-            json.dump(summary, f, indent=2)
+        # Processing sorted subsets
+        sorted_subsets = sorted(subsets, key=lambda x: len(x[1]), reverse=True)
+        already_assigned = set()          
+        for ch, subset in sorted_subsets:
+            scores = defaultdict(float)
+            for det in subset:
+                # TODO: maybe consider a log-likelihood-type formula
+                # scores[det["cls"]] += -math.log(1 - det["conf"] + 1e-6)
+                scores[det["cls"]] += det["conf"]**2
+            
+                best = max(scores.items(), key=lambda x: x[1])[0]
+                # if best already assigned, try whitelist fallback
+                if best in already_assigned:
+                    allowed = [
+                        cand_cls
+                        for cand_cls in scores.keys()
+                        for assigned in already_assigned
+                        if frozenset({cand_cls, assigned}) in whitelist_ids
+                    ]
+                    if allowed:
+                        best = max(allowed, key=lambda cls: scores[cls])
+                    else:
+                        continue  # skip this channel, nothing left to assign
 
-        # 5b) coco.json — also ORIGINAL coords
-        # coco skeleton: {"images": [], "annotations": [], "categories":[...]}
-        coco = coco_skeleton(class_ids)
-        image_id = 1
-        ref_img_rel = os.path.basename(fusion_paths[0])
-        coco["images"].append({
-            "id": image_id, 
-            "file_name": tif_file,
-            "width": int(W * scale_factor),
-            "height": int(H * scale_factor)
-        })
+                # mark this class as assigned
+                already_assigned.add(best)
 
-        ann_id = 1
-        for det in consolidated:
-            bbox_xywh = bbox_xyxy_to_xywh(det["xyxy"])
-            if det.get("segs"):
-                area = float(sum(poly_area_xy(seg) for seg in det["segs"]))
-                segmentation = det["segs"]
-            else:
-                area = float(bbox_xywh[2] * bbox_xywh[3])
-                segmentation = []
+                # filter detections in this subset
+                filtered = []
+                for det in subset:
+                    if det["cls"] == best or frozenset({det["cls"], best}) in whitelist_ids:
+                        filtered.append(det)
 
-            coco["annotations"].append({
-                "id": ann_id,
-                "image_id": image_id,
-                "category_id": int(det["cls"]),
-                "bbox": [round(v, 2) for v in bbox_xywh],
-                "area": round(area, 2),
-                "segmentation": segmentation,
-                "iscrowd": 0,
-                "confidence": round(det["conf_mean"], 4),
-                "votes": int(det["votes"]),
-                "hf_channels": det.get("channels", []),
-                "hf_channels_votes": det.get("channels_votes", {})
-            })
-            ann_id += 1
+                # ---- rescale (make shallow copies to avoid side effects)
+                rescaled = []
+                for d in filtered:
+                    d2 = {
+                        "cls": int(d["cls"]),
+                        "conf": float(d["conf"]),
+                        "xyxy": rescale_box_xyxy(d["xyxy"], scale_factor),
+                        "segs": [rescale_seg_flat(seg, scale_factor) for seg in (d.get("segs") or [])],
+                    }
+                    rescaled.append(d2)
 
-        with open(os.path.join(input_folder, f"{tif_base}.coco.json"), "w") as f:
-            json.dump(coco, f, indent=2)
+                # ---- COCO skeleton
+                coco = coco_skeleton(class_ids)
+                image_id = 1
+                coco["images"].append({
+                    "id": image_id,
+                    "file_name": tif_file,                # your TIFF name
+                    "width":  int(W * scale_factor),
+                    "height": int(H * scale_factor),
+                })
 
-        # 6) Logs
-        counts = Counter([d["cls"] for d in consolidated])
-        HFinder_log.info(
-            f"[{tif_base}] Consolidated {sum(counts.values())} detections across "
-            f"{len(set(counts.elements()))} classes; COCO & consolidated saved."
-        )
+                # ---- annotations
+                ann_id = 1
+                for d in rescaled:
+                    bbox_xywh = bbox_xyxy_to_xywh(d["xyxy"])
+                    if d["segs"]:
+                        area = float(sum(poly_area_xy(seg) for seg in d["segs"]))
+                        segmentation = d["segs"]
+                    else:
+                        area = float(bbox_xywh[2] * bbox_xywh[3])
+                        segmentation = []
+
+                    coco["annotations"].append({
+                        "id": ann_id,
+                        "image_id": image_id,
+                        "category_id": d["cls"],
+                        "bbox": [round(v, 2) for v in bbox_xywh],
+                        "area": round(area, 2),
+                        "segmentation": segmentation,
+                        "iscrowd": 0,
+                        "confidence": round(d["conf"], 4),
+                        "hf_channels": [ch]
+                    })
+                    ann_id += 1
+
+                # ---- filename tag from kept classes
+                kept_classes = sorted({d["cls"] for d in rescaled})
+                kept_names = [id_to_name[cid] for cid in kept_classes]
+                cls_tag = "+".join(kept_names)  # e.g. "nuclei" or "hyphae+haustoria"
+
+                # sanitize for filesystem
+                #import re
+                #safe_tag = re.sub(r"[^A-Za-z0-9+_-]+", "_", cls_tag)
+
+                # include channel index in filename to avoid clashes
+                out_name = f"{tif_base}_{cls_tag}.coco.json"
+                with open(os.path.join(input_folder, out_name), "w") as f:
+                    json.dump(coco, f, indent=2)
 
