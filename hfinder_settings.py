@@ -237,6 +237,6 @@ def print_summary(mode):
         if isinstance(SETTINGS[key], dict):
             if compatible_modes(SETTINGS[key]['mode'], mode):
                 value = False if "default" not in SETTINGS[key] else SETTINGS[key]['default']
-                HFinder_log.info(f"Parameter '{SETTINGS[key]['long']}' " + \
-                                 f"set to {SETTINGS[key]['default']}")
+                HFinder_log.info(f"[SETTING] '{SETTINGS[key]['long']}' " + \
+                                 f"= {SETTINGS[key]['default']}")
 
