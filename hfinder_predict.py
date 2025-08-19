@@ -323,7 +323,7 @@ def channel_scores(det_subset):
     scores = {}
     for d in det_subset:
         c = int(d["cls"])
-        scores[c] = scores.get(c, 0.0) + float(d.get("conf", 0.0)) ** 2
+        scores[c] = scores.get(c, 0.0) + float(d.get("conf", 0.0)) ** 4
 
     if not scores:
         return -1, 0.0, 0.0, {}
@@ -486,11 +486,7 @@ def run():
 
         # Sort by (best_cls_score, total_score, count)
         subset_info.sort(key=lambda t: (t[3], t[4], len(t[1])), reverse=True)
-
-
-        # Unpack if you want the same shape as before
-        sorted_subsets = [(ch, dets) for (ch, dets, _, _, _) in subset_info]
-        
+       
         already_assigned = set()
 
         for ch, subset, best, best_score, total_score, scores in subset_info:
