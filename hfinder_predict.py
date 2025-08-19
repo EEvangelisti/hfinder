@@ -303,6 +303,37 @@ def rescale_seg_flat(seg, scale_factor):
 
 
 
+def channel_scores(det_subset):
+    """
+    Compute per-channel detection scores to identify the dominant class.
+
+    Each detection contributes its confidence squared (conf²) to its class score.
+    This non-linear weighting amplifies strong predictions while suppressing the
+    influence of many weak ones.
+
+    :param det_subset: Detections for one channel (each with keys 'cls' and 'conf').
+    :type det_subset: list[dict]
+    :return: (best_cls, best_cls_score, total_score, scores) where:
+             - best_cls (int): class id with the highest cumulative score,
+             - best_cls_score (float): score of that dominant class,
+             - total_score (float): sum of all class scores for the channel,
+             - scores (dict[int, float]): per-class score map (cls → Σ conf²).
+    :rtype: tuple[int, float, float, dict[int, float]]
+    """
+    scores = {}
+    for d in det_subset:
+        c = int(d["cls"])
+        scores[c] = scores.get(c, 0.0) + float(d.get("conf", 0.0)) ** 2
+
+    if not scores:
+        return -1, 0.0, 0.0, {}
+
+    best_cls, best_cls_score = max(scores.items(), key=lambda kv: kv[1])
+    total_score = sum(scores.values())
+    return best_cls, best_cls_score, total_score, scores
+
+
+
 def run():
     """
     Run full prediction pipeline:
@@ -446,95 +477,109 @@ def run():
             if not det_subset:
                 continue
             subsets.append((ch, det_subset))
+       
+        # Sorting subsets by detection score:
+        subset_info = []
+        for ch, det_subset in subsets:
+            best_cls, best_cls_score, total_score, scores = channel_scores(det_subset)
+            subset_info.append((ch, det_subset, best_cls, best_cls_score, total_score, scores))
 
-        # Processing sorted subsets
-        sorted_subsets = sorted(subsets, key=lambda x: len(x[1]), reverse=True)
-        already_assigned = set()          
-        for ch, subset in sorted_subsets:
-            scores = defaultdict(float)
-            for det in subset:
-                # TODO: maybe consider a log-likelihood-type formula
-                # scores[det["cls"]] += -math.log(1 - det["conf"] + 1e-6)
-                scores[det["cls"]] += det["conf"]**2
-            
-                best = max(scores.items(), key=lambda x: x[1])[0]
-                # if best already assigned, try whitelist fallback
-                if best in already_assigned:
-                    allowed = [
-                        cand_cls
-                        for cand_cls in scores.keys()
-                        for assigned in already_assigned
-                        if frozenset({cand_cls, assigned}) in whitelist_ids
-                    ]
-                    if allowed:
-                        best = max(allowed, key=lambda cls: scores[cls])
-                    else:
-                        continue  # skip this channel, nothing left to assign
+        # Sort by (best_cls_score, total_score, count)
+        subset_info.sort(key=lambda t: (t[3], t[4], len(t[1])), reverse=True)
 
-                # mark this class as assigned
-                already_assigned.add(best)
 
-                # filter detections in this subset
-                filtered = []
-                for det in subset:
-                    if det["cls"] == best or frozenset({det["cls"], best}) in whitelist_ids:
-                        filtered.append(det)
+        # Unpack if you want the same shape as before
+        sorted_subsets = [(ch, dets) for (ch, dets, _, _, _) in subset_info]
+        
+        already_assigned = set()
 
-                # ---- rescale (make shallow copies to avoid side effects)
-                rescaled = []
-                for d in filtered:
-                    d2 = {
-                        "cls": int(d["cls"]),
-                        "conf": float(d["conf"]),
-                        "xyxy": rescale_box_xyxy(d["xyxy"], scale_factor),
-                        "segs": [rescale_seg_flat(seg, scale_factor) for seg in (d.get("segs") or [])],
-                    }
-                    rescaled.append(d2)
+        for ch, subset, best, best_score, total_score, scores in subset_info:
+            if not scores:
+                continue
 
-                # ---- COCO skeleton
-                coco = coco_skeleton(class_ids)
-                image_id = 1
-                coco["images"].append({
-                    "id": image_id,
-                    "file_name": tif_file,                # your TIFF name
-                    "width":  int(W * scale_factor),
-                    "height": int(H * scale_factor),
+            # If dominant class already used, try whitelist-compatible alternatives
+            if best in already_assigned:
+                allowed = set()
+                for cand_cls in scores.keys():
+                    for assigned in already_assigned:
+                        if frozenset({cand_cls, assigned}) in whitelist_ids:
+                            allowed.add(cand_cls)
+                            break
+                if allowed:
+                    # choose allowed class with highest cached score
+                    best = max(allowed, key=lambda c: scores[c])
+                else:
+                    continue  # nothing compatible left for this channel
+
+            # Mark chosen class
+            already_assigned.add(best)
+
+            # Keep detections of 'best' plus whitelisted co-occurrences
+            filtered = [
+                d for d in subset
+                if (d["cls"] == best) or (frozenset({d["cls"], best}) in whitelist_ids)
+            ]
+
+            if not filtered:
+                continue
+
+            # Rescale (shallow copies) before export
+            rescaled = []
+            for d in filtered:
+                rescaled.append({
+                    "cls": int(d["cls"]),
+                    "conf": float(d["conf"]),
+                    "xyxy": rescale_box_xyxy(d["xyxy"], scale_factor),
+                    "segs": [rescale_seg_flat(seg, scale_factor) for seg in (d.get("segs") or [])],
+                    # optionally keep provenance:
+                    # "channels": d.get("channels", []),
+                    # "channel": ch,
                 })
 
-                # ---- annotations
-                ann_id = 1
-                for d in rescaled:
-                    bbox_xywh = bbox_xyxy_to_xywh(d["xyxy"])
-                    if d["segs"]:
-                        area = float(sum(poly_area_xy(seg) for seg in d["segs"]))
-                        segmentation = d["segs"]
-                    else:
-                        area = float(bbox_xywh[2] * bbox_xywh[3])
-                        segmentation = []
+            # ---- COCO skeleton
+            coco = coco_skeleton(class_ids)
+            image_id = 1
+            coco["images"].append({
+                "id": image_id,
+                "file_name": tif_file,
+                "width":  int(W * scale_factor),
+                "height": int(H * scale_factor),
+            })
 
-                    coco["annotations"].append({
-                        "id": ann_id,
-                        "image_id": image_id,
-                        "category_id": d["cls"],
-                        "bbox": [round(v, 2) for v in bbox_xywh],
-                        "area": round(area, 2),
-                        "segmentation": segmentation,
-                        "iscrowd": 0,
-                        "confidence": round(d["conf"], 4),
-                        "hf_channels": [ch]
-                    })
-                    ann_id += 1
+            # ---- annotations
+            ann_id = 1
+            for d in rescaled:
+                bbox_xywh = bbox_xyxy_to_xywh(d["xyxy"])
+                if d["segs"]:
+                    area = float(sum(poly_area_xy(seg) for seg in d["segs"]))
+                    segmentation = d["segs"]
+                else:
+                    area = float(bbox_xywh[2] * bbox_xywh[3])
+                    segmentation = []
 
-                # ---- filename tag from kept classes
-                kept_classes = sorted({d["cls"] for d in rescaled})
-                kept_names = [id_to_name[cid] for cid in kept_classes]
-                cls_tag = "+".join(kept_names)  # e.g. "nuclei" or "hyphae+haustoria"
+                coco["annotations"].append({
+                    "id": ann_id,
+                    "image_id": image_id,
+                    "category_id": d["cls"],
+                    "bbox": [round(v, 2) for v in bbox_xywh],
+                    "area": round(area, 2),
+                    "segmentation": segmentation,
+                    "iscrowd": 0,
+                    "confidence": round(d["conf"], 4),
+                    "hf_channels": [ch]
+                })
+                ann_id += 1
 
-                # sanitize for filesystem
-                #import re
-                #safe_tag = re.sub(r"[^A-Za-z0-9+_-]+", "_", cls_tag)
+            # ---- filename tag from kept classes
+            kept_classes = sorted({d["cls"] for d in rescaled})
+            kept_names = [id_to_name[cid] for cid in kept_classes]
+            cls_tag = "+".join(kept_names)
 
-                out_name = f"{tif_base}_{cls_tag}.json"
-                with open(os.path.join(input_folder, out_name), "w") as f:
-                    json.dump(coco, f, indent=2)
+            # sanitize for filesystem
+            #import re
+            #safe_tag = re.sub(r"[^A-Za-z0-9+_-]+", "_", cls_tag)
+
+            out_name = f"{tif_base}_{cls_tag}.json"
+            with open(os.path.join(input_folder, out_name), "w") as f:
+                json.dump(coco, f, indent=2)
 
