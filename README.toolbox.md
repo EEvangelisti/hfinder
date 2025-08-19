@@ -3,7 +3,7 @@
 ## Visualizing Predictions
 
 <p align=center>
-<img src="doc/FigVisualisation.png" width="500"/>
+<img src="doc/FigVisualisation.png" width="650"/>
 </p>
 
 Once predictions have been consolidated into COCO-style JSON files, they can be 
