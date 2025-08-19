@@ -76,7 +76,7 @@ See [Training guide](README.train.md).
 
 See [Prediction guide](README.predict.md).
 
-## Technical Introduction to HFinder
+## HFinder Toolbox
 
-For a more advanced, programmer-oriented overview of HFinder, see [Technical guide](README.technical.md).
+For an introduction to HFinder auxiliary scripts, see [Toolbox guide](README.toolbox.md).
 
