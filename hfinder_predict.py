@@ -354,7 +354,7 @@ def run():
     model = YOLO(weights)
 
     # Settings
-    conf = HFinder_settings.get("conf") or 0.25
+    conf = HFinder_settings.get("confidence") or 0.25
     imgsz = HFinder_settings.get("size") or 640
     batch = HFinder_settings.get("batch") or 8
     #iou_vote = float(HFinder_settings.get("vote_iou") or 0.5)
