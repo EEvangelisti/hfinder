@@ -67,7 +67,14 @@
         "type": "int",
         "long": "batch",
         "default": 8,
-        "help": "Batch size used for running YOLO predictions."
+        "help": "Batch size used for running YOLO predictions. Larger batch sizes can provide higher throughput."
+    },
+    "c": {
+        "mode": "predict",
+        "type": "float",
+        "long": "confidence",
+        "default": 0.25,
+        "help": "Minimum confidence threshold for detections. Objects detected with confidence below this threshold will be disregarded."
     },
     "y": {
         "mode": "predict",
@@ -96,7 +103,7 @@
         "help": "Print contours as in publication style."
     },
     "s" : {
-        "mode": "train",
+        "mode": "train|predict",
         "type": "int",
         "long": "size",
         "default": 640,
