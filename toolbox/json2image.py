@@ -26,7 +26,7 @@ import tifffile
 import matplotlib
 import matplotlib.colors as mcolors
 
-MAGENTA = (255, 0, 255)
+MAGENTA = (0, 255, 255)
 ALPHA = int(0.30 * 255)  # ~30% fill opacity
 
 def sanitize(name: str) -> str:
@@ -91,17 +91,28 @@ def draw_annotation(canvas_rgb: Image.Image,
     # label (bold-ish)
     try:
         # scale font with width
-        font_size = max(stroke, int(canvas_rgb.width // 50))
+        font_size = max(stroke, int(canvas_rgb.width // 20))
         font = ImageFont.truetype("arial.ttf", font_size)
     except Exception:
         font = ImageFont.load_default()
     tw = draw.textlength(label, font=font)
     th = (font.size + 4) if hasattr(font, "size") else 14
-    tx, ty = max(0, int(x1)), max(0, int(y1) - th - 2)
+
+    # clamp X so box fits inside image
+    tx = int(x1)
+    if tx + tw + 6 > W:
+        tx = max(0, W - int(tw) - 6)
+
+    # clamp Y so it stays inside image
+    ty = int(y1) - th - 2
+    if ty < 0:
+        ty = 0
+
     draw.rectangle([tx, ty, tx + tw + 6, ty + th], fill=(0, 0, 0))
     for dx in (0, 1):
         for dy in (0, 1):
             draw.text((tx + 3 + dx, ty + 2 + dy), label, fill=color, font=font)
+
 
     # polygons via overlay
     if segs:
@@ -199,7 +210,7 @@ def main():
                         for seg in a.get("segmentation", [])
                         if isinstance(seg, list) and len(seg) >= 6]
                 conf = float(a.get("confidence", 0.0))
-                label = f"{cls_name[:2]}. ({conf:.2f})"
+                label = f"{cls_name[:2].title()}. ({conf:.2f})"
                 color = MAGENTA if not args.viridis else tuple(int(255*v) for v in cmap(norm(conf))[:3])
                 canvas = draw_annotation(canvas, bbox_xyxy, segs, label, color, stroke)
 
