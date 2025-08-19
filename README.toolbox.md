@@ -1,5 +1,7 @@
 # HFinder Toolbox
 
+HFinder is distributed with auxiliary scripts that enable visualisation of results, and various quantitative analyses.
+
 ## Visualizing Predictions
 
 <p align=center>
