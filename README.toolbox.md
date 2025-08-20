@@ -28,6 +28,7 @@ This visualization step is particularly useful for quality control,
 publication-ready figures, and quickly identifying whether predicted channels 
 match expected biological structures.
 
+<p align=center>
 |Command|Description|Default value|
 |-|-|-|
 |`-d <path>` or<br>`--tiff_dir <path>`|Folder containing TIFF files|Current directory|
@@ -36,7 +37,7 @@ match expected biological structures.
 |`-lab` or<br>`--no_labels`|Do not display labels and confidence values|Inactive|
 |`-box` or<br>`--no_bounding_boxes`|Do not display bounding boxes around polygons|Inactive|
 |`-p <name>` or<br>`--palette <name>`|Matplotlib colormap used to encode confidence values|#00FFFF|
-
+</p>
 
 ## Measuring Distances
 
