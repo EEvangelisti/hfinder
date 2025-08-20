@@ -51,12 +51,12 @@ def sanitize(name: str) -> str:
     return re.sub(r"[^A-Za-z0-9+._-]+", "_", name)
 
 
-def load_all_coco_for_base(base: str, coco_dir: str):
+def load_all_coco_for_base(base, category, coco_dir):
     """
     Charge et fusionne les JSON dont le basename commence par ``base``.
     :returns: (annotations, id_to_name)
     """
-    files = sorted(Path(coco_dir).glob(f"{base}*.json"))
+    files = sorted(Path(coco_dir).glob(f"{base}_{category}.json"))
     anns, id_to_name = [], {}
     for fp in files:
         with open(fp, "r") as f:
@@ -128,7 +128,7 @@ def apply_threshold(img: np.ndarray, method: str = "otsu") -> float:
 
 # ------------------------- Mesure & normalisation ------------------------- #
 
-def measure_polygon_means(frame: np.ndarray, polygons: list, thr: float | None) -> list[float]:
+def measure_polygon_means(frame, polygons, thr=0):
     """
     Moyenne d’intensité par polygone (pixels au-dessus du seuil si thr non None).
     """
@@ -145,7 +145,7 @@ def measure_polygon_means(frame: np.ndarray, polygons: list, thr: float | None) 
             continue
         vals = frame[m]
         means.append(float(vals.mean()))
-    return means
+    return means[0]
 
 
 def background_mean_excluding(frame: np.ndarray, mask_union: np.ndarray, thr: float | None) -> float:
@@ -169,6 +169,11 @@ def parse_arguments():
     ap.add_argument("-o", "--out_dir",  default=".", help="Dossier de sortie (default: .)")
     ap.add_argument("-cat", "--category", required=True,
                     help="Catégorie à analyser (id numérique ou nom exact).")
+    ap.add_argument(
+        "-s", "--signal",
+        default="same",
+        help="Index of the channel used to retrieve signal. 'same' = use the detection channel."
+    )
     ap.add_argument("--z", type=int, default=0, help="Index Z si présent (default: 0)")
     ap.add_argument("--save-tsv", action="store_true", help="Sauver aussi les valeurs par polygone (TSV).")
     ap.add_argument("-th", "--threshold", default="otsu",
@@ -198,107 +203,87 @@ def main():
     all_ratios = []
     rows_for_tsv = []
 
-    for tif_path in tiff_paths:
-        base = tif_path.stem
-        anns, id_to_name = load_all_coco_for_base(base, args.coco_dir)
-        if not anns:
-            print(f"   • {base}: pas d’annotations → skip")
-            continue
-
-        # Résolution catégorie -> id
-        selected_cids = set()
-        if args.category.isdigit():
-            selected_cids.add(int(args.category))
-        else:
-            for cid, nm in id_to_name.items():
-                if nm == args.category:
-                    selected_cids.add(cid)
-        if not selected_cids:
-            print(f"   • {base}: catégorie '{args.category}' introuvable → skip")
-            continue
-
-        arr = tifffile.imread(tif_path)
-        H, W = arr.shape[-2:]
-
-        # Groupe par canal
-        by_ch = defaultdict(list)
-        for a in anns:
-            cid = int(a["category_id"])
-            if cid not in selected_cids:
-                continue
-            raw_ch = a.get("hf_channels", 0)
-            ch = int(raw_ch[0]) if (isinstance(raw_ch, list) and raw_ch) else int(raw_ch)
-            segs = [seg for seg in a.get("segmentation", []) if isinstance(seg, list) and len(seg) >= 6]
-            if segs:
-                by_ch[ch].append(segs)
-
-        if not by_ch:
-            print(f"   • {base}: aucun polygone pour la catégorie → skip")
-            continue
-
-        for ch, poly_list in sorted(by_ch.items()):
-            frame = extract_frame(arr, ch=ch, z=args.z)  # garde la dtype native (uint16, etc.)
-
-            # Seuil (Otsu par défaut ou valeur fournie)
-            thr_val = None
-            if isinstance(args.threshold, str):
-                thr_val = apply_threshold(frame, args.threshold)
-            else:
-                thr_val = float(args.threshold)
-
-            # Masque union de tous les polygones
-            union_mask = np.zeros((H, W), dtype=bool)
-            for segs in poly_list:
-                union_mask |= polygons_to_mask(segs, (H, W))
-
-            # Moyenne du fond (hors polygones, au-dessus du seuil)
-            bg_mean = background_mean_excluding(frame, union_mask, thr_val)
-
-            # Moyenne par polygone (pixels au-dessus du seuil)
-            poly_means = measure_polygon_means(frame, poly_list, thr_val)
-
-            # Ratios
-            for pm in poly_means:
-                if np.isnan(pm) or not np.isfinite(bg_mean) or bg_mean == 0:
-                    ratio = float("nan")
-                else:
-                    ratio = pm / bg_mean
-                all_ratios.append(ratio)
-                rows_for_tsv.append((base, ch, pm, bg_mean, ratio, thr_val))
-
-    # Rien à tracer ?
-    finite_ratios = [x for x in all_ratios if np.isfinite(x)]
-    if not finite_ratios:
-        print("Aucun ratio fini à tracer. Fin.")
-        return
-
-    # --- Box plot + points individuels ---
     cat_tag = sanitize(str(args.category))
-    fig, ax = plt.subplots(figsize=(6, 6))
-    bp = ax.boxplot([finite_ratios], vert=True, showmeans=True, widths=0.35)
+    out_tsv = Path(args.out_dir) / f"values_{cat_tag}.tsv"
+    with open(out_tsv, "w") as f:
+        f.write("Filename\tClass\tX\tY\tMean\n")
+        for tif_path in tiff_paths:
+            base = tif_path.stem
+            print(f"Processing {tif_path.name}")
+            anns, id_to_name = load_all_coco_for_base(base, args.category, args.coco_dir)
+            if not anns:
+                print(f"   ⚠️ No annotations, skipping.")
+                continue
 
-    # Nuage de points (jitter horizontal)
-    rng = np.random.default_rng(0)
-    xs = rng.normal(loc=1.0, scale=0.03, size=len(finite_ratios))
-    ax.scatter(xs, finite_ratios, s=14, alpha=0.6, edgecolors="none")
+            # Get class ID
+            selected_class = set()
+            if args.category.isdigit():
+                selected_class.add(int(args.category))
+            else:
+                for cid, nm in id_to_name.items():
+                    if nm == args.category:
+                        selected_class.add(cid)
+            if not selected_class:
+                print(f"   ⚠️ Unknown category {args.category}.")
+                continue
 
-    ax.set_ylabel("Mean(polygone) / Mean(fond)")
-    ax.set_title(f"Enrichment — category: {args.category} (N={len(finite_ratios)})")
-    ax.grid(True, linestyle="--", alpha=0.4)
-    fig.tight_layout()
-    out_png = Path(args.out_dir) / f"boxplot_{cat_tag}.png"
-    fig.savefig(out_png, dpi=200)
-    plt.close(fig)
-    print(f"✅ Box plot enregistré → {out_png}")
+            arr = tifffile.imread(tif_path)
+            H, W = arr.shape[-2:]
 
-    # TSV optionnel
-    if getattr(args, "save_tsv", False):
-        out_tsv = Path(args.out_dir) / f"values_{cat_tag}.tsv"
-        with open(out_tsv, "w") as f:
-            f.write("image\tchannel\tpolygon_mean\tbackground_mean\tratio\tthreshold\n")
-            for base, ch, pm, bgm, r, thr in rows_for_tsv:
-                f.write(f"{base}\t{ch}\t{pm}\t{bgm}\t{r}\t{thr}\n")
-        print(f"✅ Valeurs enregistrées → {out_tsv}")
+            # Sort annotations by channel
+            by_ch = defaultdict(list)
+            for a in anns:
+                cid = int(a["category_id"])
+                if cid not in selected_class:
+                    continue
+                raw_ch = a.get("hf_channels", 0)
+                ch = int(raw_ch[0]) if (isinstance(raw_ch, list) and raw_ch) else int(raw_ch)
+                segs = [seg for seg in a.get("segmentation", []) if isinstance(seg, list) and len(seg) >= 6]
+                if segs:
+                    by_ch[ch].append(segs)
+
+            if not by_ch:
+                print(f"   ⚠️ No annotations, skipping.")
+                continue
+
+            for ch, poly_list in sorted(by_ch.items()):
+                if args.signal == "same":
+                    signal_ch = ch - 1
+                else:
+                    signal_ch = int(args.signal) - 1
+                    if not (0 <= signal_ch < arr.shape[-3 if arr.ndim == 4 else -3+1]):
+                        raise ValueError(f"   ❌ Signal channel {signal_ch} out of bounds for shape {arr.shape}")
+                frame = extract_frame(arr, ch=signal_ch, z=args.z)
+
+                # Seuil (Otsu par défaut ou valeur fournie)
+                thr_val = None
+                if isinstance(args.threshold, str):
+                    thr_val = apply_threshold(frame, args.threshold)
+                else:
+                    thr_val = float(args.threshold)
+               
+                union_mask = np.zeros((H, W), dtype=bool)
+                for i, segs in enumerate(poly_list):
+                    mask = polygons_to_mask(segs, (H, W))
+                    # Image restreinte au polygone
+                    masked_frame = np.zeros_like(frame)
+                    masked_frame[mask] = frame[mask]
+                    # Sauvegarde de vérification
+                    out_png = Path(args.out_dir) / f"{base}_{i}_mask.png"
+                    plt.imsave(out_png, masked_frame, cmap="gray")
+                    union_mask |= polygons_to_mask(segs, (H, W))
+                    seg_mean = measure_polygon_means(frame, [segs], 0)
+                    
+                    M = mask.sum()
+                    if M > 0:
+                        ys, xs = np.nonzero(mask)
+                        cx, cy = xs.mean(), H - 1 - ys.mean()
+                    else:
+                        cx, cy = np.nan, np.nan
+                    
+                    f.write(f"{tif_path.name},{args.category},{cx},{cy},{seg_mean}\n")
+
+    print(f"✅ Data saved in file '{out_tsv}'")
 
 
 if __name__ == "__main__":
