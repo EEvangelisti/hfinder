@@ -493,19 +493,36 @@ def run():
             if not scores:
                 continue
 
-            # If dominant class already used, try whitelist-compatible alternatives
+            # Sélection robuste avec whitelist : co-dominance autorisée mais jamais séparée
+            present = set(scores.keys())  # classes détectées sur CE canal
+ 
             if best in already_assigned:
-                allowed = set()
-                for cand_cls in scores.keys():
-                    for assigned in already_assigned:
-                        if frozenset({cand_cls, assigned}) in whitelist_ids:
-                            allowed.add(cand_cls)
-                            break
-                if allowed:
-                    # choose allowed class with highest cached score
-                    best = max(allowed, key=lambda c: scores[c])
-                else:
-                    continue  # nothing compatible left for this channel
+                # Chercher des paires (c,a) telles que :
+                # - c != a
+                # - {c,a} ∈ whitelist_ids
+                # - c et a sont tous deux PRÉSENTS sur ce canal
+                pairs = [
+                    (c, a) for c in present for a in present
+                    if c != a and frozenset({c, a}) in whitelist_ids
+                ]
+                if not pairs:
+                    continue  # aucune co-dominance réalisable ici
+                # Choisir la paire au score total maximal
+                c_star, a_star = max(pairs, key=lambda p: scores[p[0]] + scores[p[1]])
+                kept_set = {c_star, a_star}
+            else:
+                # Best est libre : on ajoute le partenaire whitelist SEULEMENT s'il est PRÉSENT
+                partners = {c for c in present if frozenset({c, best}) in whitelist_ids}
+                partners &= present  # explicite (déjà vrai), évite toute surprise
+                kept_set = {best} | (partners if partners else set())
+ 
+            # Marquer toutes les classes retenues pour verrouiller les canaux suivants
+            already_assigned |= kept_set
+ 
+            # Filtrer les détections de CE canal pour n'inclure que kept_set
+            subset = [d for d in subset if d["cls"] in kept_set]
+            if not subset:
+                continue
 
             # Mark chosen class
             already_assigned.add(best)
