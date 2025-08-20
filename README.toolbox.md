@@ -1,6 +1,6 @@
 # HFinder Toolbox
 
-HFinder is distributed with auxiliary scripts that enable visualisation of results, and various quantitative analyses.
+HFinder is distributed with auxiliary scripts that enable visualisation of results and quantitative analyses. These scripts are available in the `toolbox` folder.
 
 ## Visualizing Predictions
 
@@ -9,7 +9,7 @@ HFinder is distributed with auxiliary scripts that enable visualisation of resul
 </p>
 
 Once predictions have been consolidated into COCO-style JSON files, they can be 
-easily visualized with the `json2images.py` utility. This script loads the JSON 
+easily visualized with the `annot2images.py` utility. This script loads the JSON 
 annotations and the corresponding TIFF channels, then generates PNG images that 
 overlay the predicted objects.
 
@@ -36,7 +36,9 @@ match expected biological structures.
 |`-lab` or<br>`--no_labels`|Do not display labels and confidence values|Inactive|
 |`-box` or<br>`--no_bounding_boxes`|Do not display bounding boxes around polygons|Inactive|
 |`-p <name>` or<br>`--palette <name>`|Matplotlib colormap used to encode confidence values|#00FFFF|
-
+|`-f <name>` or<br>`--font <name>`|Font used to write labels and confidence values|arial.ttf|
+|`-s <int>` or<br>`--font_size <int>`|Font size for labels and confidence values|Proportional|
+|`-l` or<br>`--long_labels`|Do not abbreviate label names|Inactive|
 
 ## Measuring Distances
 
