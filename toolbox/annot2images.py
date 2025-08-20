@@ -287,16 +287,6 @@ def parse_arguments():
     """
     Parse CLI arguments and populate global ``SETTINGS``.
 
-    Flags (short → long):
-      - ``-d`` / ``--tiff_dir``: Folder containing TIFF files.
-      - ``-c`` / ``--coco_dir``: Folder containing COCO JSON files.
-      - ``-o`` / ``--out_dir``: Output directory for PNG files.
-      - ``-lab`` / ``--no_labels``: Disable labels and confidence values.
-      - ``-box`` / ``--no_bounding_boxes``: Disable bounding boxes.
-      - ``-p`` / ``--palette``: Matplotlib colormap name for confidence (e.g. ``viridis``).
-      - ``-f`` / ``--font``: TTF font path for labels.
-      - ``-s`` / ``--font_size``: Font size (``"proportional"`` or integer as string).
-
     :returns: None (sets global ``SETTINGS``).
     :rtype: None
     """
