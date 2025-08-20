@@ -17,7 +17,7 @@ filled polygons. Color is magenta by default or confidence-coded via a matplotli
 **Usage**
 .. code-block:: bash
 
-    python json2image.py \
+    python annot2images.py \
         --tiff_dir /path/to/tiffs \
         --coco_dir /path/to/jsons \
         --out_dir  /path/to/out \
