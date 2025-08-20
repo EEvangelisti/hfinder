@@ -28,6 +28,15 @@ This visualization step is particularly useful for quality control,
 publication-ready figures, and quickly identifying whether predicted channels 
 match expected biological structures.
 
+|Command|Description|Default value|
+|-|-|-|
+|`-d <path>` or<br>`--tiff_dir <path>`|Folder containing TIFF files|Current directory|
+|`-c <path>` or<br>`--coco_dir <path>`|Folder containing COCO JSON files|Current directory|
+|`-o <path>` or<br>`--out_dir <path>`|Output directory for PNG files|Current directory|
+|`-lab` or<br>`--no_labels`|Do not display labels and confidence values|Inactive|
+|`-box` or<br>`--no_bounding_boxes`|Do not display bounding boxes around polygons|Inactive|
+|`-p <name>` or<br>`--palette <name>`|Matplotlib colormap used to encode confidence values|#00FFFF|
+
 
 ## Measuring Distances
 
