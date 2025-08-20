@@ -40,11 +40,38 @@ match expected biological structures.
 |`-s <int>` or<br>`--font_size <int>`|Font size for labels and confidence values|Proportional|
 |`-l` or<br>`--long_labels`|Do not abbreviate label names|Inactive|
 
-## Measuring Distances
-
-...
-
 
 ## Signal Enrichment
+
+Beyond visualization, it is often essential to measure whether predicted 
+structures show a higher-than-expected signal on their corresponding microscopy 
+channel. The `annot2enrichment.py` utility automates this quantification. It 
+loads the COCO-style JSON annotations together with the associated TIFF channels, 
+extracts per-polygon intensities, and normalizes them against the channel 
+background. The result is a distribution of enrichment values, summarized as a 
+box plot.  
+
+**Key features:**  
+
+- **Channel-aware quantification:** Each polygon is measured strictly on the channel where it was detected.  
+- **Background normalization:** Mean intensities are normalized against the average background of the same channel, with annotated regions excluded to avoid bias.  
+- **Thresholding support:** By default, Otsu thresholding is applied to separate true signal from background; alternatively, a fixed threshold can be provided.  
+- **Per-polygon statistics:** Every annotation is treated independently, enabling detailed downstream analyses (values can optionally be exported as a TSV).  
+- **Publication-ready plots:** Results are visualized as box plots with individual points overlaid, highlighting both distribution and variability.  
+
+This step is particularly useful to assess whether detected objects correspond 
+to biologically enriched structures, compare categories or channels 
+quantitatively, and provide statistical summaries alongside qualitative overlays.
+
+|Command|Description|Default value|
+|-|-|-|
+|`-d <path>` or<br>`--tiff_dir <path>`|Folder containing TIFF files|Current directory|
+|`-c <path>` or<br>`--coco_dir <path>`|Folder containing COCO JSON files|Current directory|
+|`-o <path>` or<br>`--out_dir <path>`|Output directory for PNG files|Current directory|
+|`-cat <name>` or<br>`--category <name>`|Category to analyse|None|
+|`-s` or<br>`--save_tsv`|Save output value as TSV file|Inactive|
+|`-th` or<br>`--threshold`|Thresholding method or numerical value|Otsu|
+
+## Measuring Distances
 
 ...
