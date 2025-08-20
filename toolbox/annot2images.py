@@ -157,7 +157,7 @@ def draw_annotation(img, bbox_xyxy, segs, label, color, stroke):
     :type segs: list
     :param label: Text label (e.g., ``"Cl. (0.92)"``) or ``None`` to skip.
     :type label: str | None
-    :param color: RGB tuple for strokes/fills, e.g. ``(255, 0, 255)``.
+    :param color: RGB tuple for strokes/fills, e.g. ``(0, 255, 255)``.
     :type color: tuple[int, int, int]
     :param stroke: Stroke width in pixels.
     :type stroke: int
@@ -375,7 +375,7 @@ def main():
             cmap = matplotlib.colormaps.get_cmap(SETTINGS.palette)
             norm = Normalize(vmin=0.0, vmax=1.0)
         except Exception:
-            print(f"⚠️ Unknown palette '{SETTINGS.palette}', falling back to magenta.")
+            print(f"⚠️ Unknown palette '{SETTINGS.palette}', falling back to cyan.")
 
     tiff_paths = sorted(
         chain(
