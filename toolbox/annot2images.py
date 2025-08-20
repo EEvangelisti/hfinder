@@ -98,7 +98,7 @@ def load_all_coco_for_base(base, coco_dir):
     :returns: Tuple ``(annotations, id_to_name)``.
     :rtype: tuple[list[dict], dict[int, str]]
     """
-    files = sorted(Path(coco_dir).glob(f"{base}*.json"))
+    files = sorted(Path(coco_dir).glob(f"{base}_{SETTINGS.category}.json"))
     anns = []
     id_to_name = {}
     for fp in files:
@@ -199,7 +199,9 @@ def draw_annotation(img, bbox_xyxy, segs, label, color, stroke):
             if isinstance(seg, list):
                 pts = [(seg[i], seg[i+1]) for i in range(0, len(seg), 2)]
                 odraw.polygon(pts, fill=color + (ALPHA30,))
-                odraw.line(pts, fill=color + (255,), width=1)
+                # Close the outline by going back to the first point.
+                pts.append((seg[0], seg[1]))
+                odraw.line(pts, fill=color + (255,), width=stroke)
         img = Image.alpha_composite(img.convert("RGBA"), overlay).convert("RGB")
 
     return img
@@ -269,7 +271,14 @@ ARGLIST = {
             "action": "store_true",
             "help": "Do not abbreviate label names"
         }
-    }
+    },
+    "-cat": {
+        "long": "--category",
+        "config": {
+            "default": "*",
+            "help": "Process the given category only"
+        }
+    },
 }
 
 
