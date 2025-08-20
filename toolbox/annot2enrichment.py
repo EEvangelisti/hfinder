@@ -40,6 +40,7 @@ import tifffile
 import matplotlib
 matplotlib.use("Agg")  # rendu hors écran
 import matplotlib.pyplot as plt
+from skimage import filters
 from PIL import Image, ImageDraw
 
 
@@ -102,27 +103,27 @@ def polygons_to_mask(polygons: list, shape_hw: tuple[int, int]) -> np.ndarray:
     return np.array(mask, dtype=bool)
 
 
-def otsu_threshold(arr: np.ndarray, bins: int = 256) -> float:
+def apply_threshold(img: np.ndarray, method: str = "otsu") -> float:
     """
-    Seuil d’Otsu générique (sans dépendance skimage).
-    Calcule un histogramme (bins=256) entre min et max du tableau.
+    Apply a scikit-image thresholding method and return the numeric threshold.
+
+    Supported methods: "otsu", "isodata", "li", "yen", "triangle", "mean"
     """
-    a = arr.astype(np.float32, copy=False)
-    vmin, vmax = float(a.min()), float(a.max())
-    if not np.isfinite(vmin) or not np.isfinite(vmax) or vmax <= vmin:
-        return vmin
-    hist, edges = np.histogram(a, bins=bins, range=(vmin, vmax))
-    p = hist.astype(np.float64)
-    p /= p.sum() if p.sum() > 0 else 1.0
-    omega = np.cumsum(p)
-    centers = 0.5 * (edges[:-1] + edges[1:])
-    mu = np.cumsum(p * centers)
-    mu_t = mu[-1]
-    denom = omega * (1.0 - omega)
-    denom[denom == 0] = np.nan  # évite division par zéro
-    sigma_b2 = np.square(mu_t * omega - mu) / denom
-    idx = np.nanargmax(sigma_b2)
-    return float(centers[idx])
+    method = method.lower()
+    if method == "otsu":
+        return float(filters.threshold_otsu(img))
+    elif method == "isodata":
+        return float(filters.threshold_isodata(img))
+    elif method == "li":
+        return float(filters.threshold_li(img))
+    elif method == "yen":
+        return float(filters.threshold_yen(img))
+    elif method == "triangle":
+        return float(filters.threshold_triangle(img))
+    elif method == "mean":
+        return float(filters.threshold_mean(img))
+    else:
+        raise ValueError(f"Unknown thresholding method: {method}")
 
 
 # ------------------------- Mesure & normalisation ------------------------- #
@@ -240,14 +241,10 @@ def main():
 
             # Seuil (Otsu par défaut ou valeur fournie)
             thr_val = None
-            if isinstance(args.threshold, str) and args.threshold.lower() == "otsu":
-                thr_val = otsu_threshold(frame)
+            if isinstance(args.threshold, str):
+                thr_val = apply_threshold(frame, args.threshold)
             else:
-                try:
-                    thr_val = float(args.threshold)
-                except Exception:
-                    print(f"   • {base} ch{ch}: seuil invalide '{args.threshold}', usage Otsu.")
-                    thr_val = otsu_threshold(frame)
+                thr_val = float(args.threshold)
 
             # Masque union de tous les polygones
             union_mask = np.zeros((H, W), dtype=bool)
