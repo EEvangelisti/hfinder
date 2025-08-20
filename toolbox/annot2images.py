@@ -39,7 +39,7 @@ from matplotlib.colors import Normalize
 from PIL import Image, ImageDraw, ImageFont, ImageOps
 
 
-MAGENTA = (255, 0, 255)
+CYAN = (0, 255, 255)
 ALPHA30 = int(0.30 * 255)
 SETTINGS = None
 
@@ -432,7 +432,7 @@ def main():
                     bbox_xyxy=[x, y, x + w, y + h],
                     segs=[seg for seg in a.get("segmentation", []) if isinstance(seg, list)],
                     label=label,
-                    color=MAGENTA if cmap is None else tuple(int(255*v) for v in cmap(norm(conf))[:3]),
+                    color=CYAN if cmap is None else tuple(int(255*v) for v in cmap(norm(conf))[:3]),
                     stroke=stroke
                 )
 
