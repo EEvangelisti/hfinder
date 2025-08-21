@@ -77,4 +77,17 @@ quantitatively, and provide statistical summaries alongside qualitative overlays
 
 ## Measuring Distances
 
-...
+|Command|Description|Default value|
+|-|-|-|
+|`-t <path>` or<br>`--tiff_dir <path>`|Folder containing TIFF files|Current directory|
+|`-a <path>` or<br>`--annotations <path>`|Folder containing COCO JSON files|Current directory|
+|`-o <path>` or<br>`--out_dir <path>`|Output directory for PNG files|Current directory|
+|`-clA <name/index>` or<br>`--class_A <name/index>`|Primary class name or numeric id|**No default**|
+|`-clB <name/index>` or<br>`--class_B <name/index>`|Secondary class name or numeric id (if omitted, within-class A↔A)|None|
+|`-hue <csv>` or<br>`--hues_list <csv>`|Comma-separated hues (degrees) assigned to channels|180,300,0|
+|`-s <int>` or<br>`--stroke <int>`|Stroke width for drawing overlays|2|
+|`-ttf <file>` or<br>`--font_file <file>`|TTF font for labels (fallback to default if missing)|"DejaVuSans.ttf"|
+|`-sz <int>` or<br>`--font_size <int>`|Font size for labels|14|
+|`-max <int>` or<br>`--max_png <int>`|Max number of PNG overlays to save (to avoid huge dumps)|24|
+|`-lab` or<br>`--no_labels`|Do not show labels|Inactive|
+
