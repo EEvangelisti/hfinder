@@ -30,18 +30,22 @@ match expected biological structures.
 
 |Command|Description|Default value|
 |-|-|-|
-|`-d <path>` or<br>`--tiff_dir <path>`|Folder containing TIFF files|Current directory|
-|`-c <path>` or<br>`--coco_dir <path>`|Folder containing COCO JSON files|Current directory|
+|`-t <path>` or<br>`--tiff_dir <path>`|Folder containing TIFF files|Current directory|
+|`-a <path>` or<br>`--annotations <path>`|Folder containing COCO JSON annotations|Current directory|
 |`-o <path>` or<br>`--out_dir <path>`|Output directory for PNG files|Current directory|
 |`-lab` or<br>`--no_labels`|Do not display labels and confidence values|Inactive|
 |`-box` or<br>`--no_bounding_boxes`|Do not display bounding boxes around polygons|Inactive|
-|`-p <name>` or<br>`--palette <name>`|Matplotlib colormap used to encode confidence values|#00FFFF|
-|`-f <name>` or<br>`--font <name>`|Font used to write labels and confidence values|arial.ttf|
-|`-s <int>` or<br>`--font_size <int>`|Font size for labels and confidence values|Proportional|
-|`-l` or<br>`--long_labels`|Do not abbreviate label names|Inactive|
-
+|`-pal <name>` or<br>`--palette <name>`|Matplotlib colormap used to encode confidence values|#00FFFF|
+|`-ttf <name>` or<br>`--font_file <name>`|Font used to write labels and confidence values|arial.ttf|
+|`-sz <int>` or<br>`--font_size <int>`|Font size for labels and confidence values|Proportional|
+|`-long` or<br>`--long_labels`|Do not abbreviate label names|Inactive|
+|`-cat <name>` or<br>`--category <name>`|Process the given category only|All categories|
 
 ## Signal Enrichment
+
+<p align=center>
+<img src="doc/SignalQuantification.png" width="650"/>
+</p>
 
 Beyond visualization, it is often essential to measure whether predicted 
 structures show a higher-than-expected signal on their corresponding microscopy 
@@ -65,12 +69,11 @@ quantitatively, and provide statistical summaries alongside qualitative overlays
 
 |Command|Description|Default value|
 |-|-|-|
-|`-d <path>` or<br>`--tiff_dir <path>`|Folder containing TIFF files|Current directory|
-|`-c <path>` or<br>`--coco_dir <path>`|Folder containing COCO JSON files|Current directory|
+|`-t <path>` or<br>`--tiff_dir <path>`|Folder containing TIFF files|Current directory|
+|`-a <path>` or<br>`--annotations <path>`|Folder containing COCO JSON files|Current directory|
 |`-o <path>` or<br>`--out_dir <path>`|Output directory for PNG files|Current directory|
 |`-cat <name>` or<br>`--category <name>`|Category to analyse|None|
-|`-s` or<br>`--save_tsv`|Save output value as TSV file|Inactive|
-|`-th` or<br>`--threshold`|Thresholding method or numerical value|Otsu|
+|`-sig` or<br>`--signal`|Index of the channel used to retrieve signal. 'same' = use the detection channel|same|
 
 ## Measuring Distances
 
