@@ -5,7 +5,7 @@ Render one PNG per category from COCO predictions aligned to TIFF stacks.
 
 **Pipeline**
 - For each TIFF in ``--tiff_dir``:
-  - collect all matching ``*.json`` COCO files from ``--coco_dir`` (basename match),
+  - collect all matching ``*.json`` COCO files from ``--annotations`` (basename match),
   - merge their categories and annotations,
   - render **one** image per (category, channel) with bounding boxes, polygons and labels.
 
@@ -19,10 +19,10 @@ filled polygons. Color is magenta by default or confidence-coded via a matplotli
 
     python annot2images.py \
         --tiff_dir /path/to/tiffs \
-        --coco_dir /path/to/jsons \
-        --out_dir  /path/to/out \
+        --annotations /path/to/jsons \
+        --out_dir /path/to/out \
         [--palette viridis] [--no_labels] [--no_bounding_boxes] \
-        [--font DejaVuSans.ttf] [--font_size 18]
+        [--font_file DejaVuSans.ttf] [--font_size 18]
 
 """
 
@@ -43,6 +43,78 @@ CYAN = (0, 255, 255)
 ALPHA30 = int(0.30 * 255)
 SETTINGS = None
 
+ARGLIST = {
+    "-t": {
+        "long": "--tiff_dir",
+        "config": {
+            "default": ".",
+            "help": "Folder containing TIFF files"
+        }
+    },
+    "-a": {
+        "long": "--annotations",
+        "config": {
+            "default": ".",
+            "help": "Folder containing COCO JSON files"
+        }
+    },
+    "-o": {
+        "long": "--out_dir",
+        "config": {
+            "default": ".",
+            "help": "Output directory for PNG files"
+        }
+    },
+    "-lab": {
+        "long": "--no_labels",
+        "config": {
+            "action": "store_true",
+            "help": "Do not display labels and confidence values - useful on crowded images"
+        }
+    },
+    "-box": {
+        "long": "--no_bounding_boxes",
+        "config": {
+            "action": "store_true",
+            "help": "Do not display bounding boxes around polygons"
+        }
+    },
+    "-pal": {
+        "long": "--palette",
+        "config": {
+            "default": None,
+            "help": "Matplotlib colormap used to encode confidence values, e.g. viridis, plasma, cool, etc."
+        }
+    },
+    "-ttf": {
+        "long": "--font_file",
+        "config": {
+            "default": "DejaVuSans.ttf",
+            "help": "Font used to write labels and confidence values"
+        }
+    },
+    "-sz": {
+        "long": "--font_size",
+        "config": {
+            "default": "proportional",
+            "help": "Font size for labels and confidence values"
+        }
+    },
+    "-long": {
+        "long": "--long_labels",
+        "config": {
+            "action": "store_true",
+            "help": "Do not abbreviate label names"
+        }
+    },
+    "-cat": {
+        "long": "--category",
+        "config": {
+            "default": "*",
+            "help": "Process the given category only"
+        }
+    },
+}
 
 
 def sanitize(name):
@@ -174,7 +246,7 @@ def draw_annotation(img, bbox_xyxy, segs, label, color, stroke):
     if label is not None:
         try:
             font_size = int(img.width // 30) if SETTINGS.font_size == "proportional" else int(SETTINGS.font_size)
-            font = ImageFont.truetype(SETTINGS.font, font_size)
+            font = ImageFont.truetype(SETTINGS.font_file, font_size)
         except Exception:
             font = ImageFont.load_default()
         tw = draw.textlength(label, font=font)
@@ -205,81 +277,6 @@ def draw_annotation(img, bbox_xyxy, segs, label, color, stroke):
         img = Image.alpha_composite(img.convert("RGBA"), overlay).convert("RGB")
 
     return img
-
-
-
-ARGLIST = {
-    "-d": {
-        "long": "--tiff_dir",
-        "config": {
-            "default": ".",
-            "help": "Folder containing TIFF files"
-        }
-    },
-    "-c": {
-        "long": "--coco_dir",
-        "config": {
-            "default": ".",
-            "help": "Folder containing COCO JSON files"
-        }
-    },
-    "-o": {
-        "long": "--out_dir",
-        "config": {
-            "default": ".",
-            "help": "Output directory for PNG files"
-        }
-    },
-    "-lab": {
-        "long": "--no_labels",
-        "config": {
-            "action": "store_true",
-            "help": "Do not display labels and confidence values - useful on crowded images"
-        }
-    },
-    "-box": {
-        "long": "--no_bounding_boxes",
-        "config": {
-            "action": "store_true",
-            "help": "Do not display bounding boxes around polygons"
-        }
-    },
-    "-p": {
-        "long": "--palette",
-        "config": {
-            "default": None,
-            "help": "Matplotlib colormap used to encode confidence values, e.g. viridis, plasma, cool, etc."
-        }
-    },
-    "-f": {
-        "long": "--font",
-        "config": {
-            "default": "DejaVuSans.ttf",
-            "help": "Font used to write labels and confidence values"
-        }
-    },
-    "-s": {
-        "long": "--font_size",
-        "config": {
-            "default": "proportional",
-            "help": "Font size for labels and confidence values"
-        }
-    },
-    "-l": {
-        "long": "--long_labels",
-        "config": {
-            "action": "store_true",
-            "help": "Do not abbreviate label names"
-        }
-    },
-    "-cat": {
-        "long": "--category",
-        "config": {
-            "default": "*",
-            "help": "Process the given category only"
-        }
-    },
-}
 
 
 
@@ -386,7 +383,7 @@ def main():
     for tif_path in tiff_paths:
         print(f"Processing file '{tif_path.name}'")
         base = tif_path.stem
-        anns, id_to_name = load_all_coco_for_base(base, SETTINGS.coco_dir)
+        anns, id_to_name = load_all_coco_for_base(base, SETTINGS.annotations)
         if not anns:
             print("   ❌ No annotations, skipping")
             continue
