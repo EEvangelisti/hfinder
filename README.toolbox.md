@@ -2,7 +2,7 @@
 
 HFinder is distributed with auxiliary scripts that enable visualisation of results and quantitative analyses. These scripts are available in the `toolbox` folder.
 
-## Visualizing Predictions
+## Visualizing Predictions - `annot2images.py`
 
 <p align=center>
 <img src="doc/FigVisualisation.png" width="650"/>
@@ -41,7 +41,9 @@ match expected biological structures.
 |`-long` or<br>`--long_labels`|Do not abbreviate label names|Inactive|
 |`-cat <name>` or<br>`--category <name>`|Process the given category only|All categories|
 
-## Signal Enrichment
+
+
+## Signal Extraction - `annot2signal.py`
 
 <p align=center>
 <img src="doc/SignalQuantification.png" width="650"/>
@@ -49,7 +51,7 @@ match expected biological structures.
 
 Beyond visualization, it is often essential to measure whether predicted 
 structures show a higher-than-expected signal on their corresponding microscopy 
-channel. The `annot2enrichment.py` utility automates this quantification. It 
+channel. The `annot2signal.py` utility automates this quantification. It 
 loads the COCO-style JSON annotations together with the associated TIFF channels, 
 extracts per-polygon intensities, and normalizes them against the channel 
 background. The result is a distribution of enrichment values, summarized as a 
@@ -75,7 +77,9 @@ quantitatively, and provide statistical summaries alongside qualitative overlays
 |`-cat <name>` or<br>`--category <name>`|Category to analyse|None|
 |`-sig` or<br>`--signal`|Index of the channel used to retrieve signal. 'same' = use the detection channel|same|
 
-## Measuring Distances
+
+
+## Measuring Distances - `annot2distances.py`
 
 Quantifying spatial relationships between annotated objects is useful in microscopy.
 The `annot2distances.py` utility automates this process. It takes COCO-style 
