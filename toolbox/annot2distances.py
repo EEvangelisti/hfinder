@@ -85,8 +85,8 @@ ARGLIST = {
             "help": "Secondary class name or numeric id (if omitted, within-class A↔A)"
         }
     },
-    "-h": {
-        "long": "--hues",
+    "-hue": {
+        "long": "--hues_list",
         "config": {
             "default": "180,300,0",
             "help": "Comma-separated hues (degrees) assigned to channels 0,1,2,... e.g. '0,120,240'"
@@ -101,13 +101,13 @@ ARGLIST = {
         }
     },
     "-ttf": {
-        "long": "--font_name",
+        "long": "--font_file",
         "config": {
             "default": "DejaVuSans.ttf",
             "help": "TTF font for labels (fallback to default if missing)"
         }
     },
-    "-fsz": {
+    "-sz": {
         "long": "--font_size",
         "config": {
             "type": int,
@@ -465,11 +465,11 @@ def main() -> None:
     :return: None
     :rtype: None
     """
-    parse_args()
+    parse_arguments()
     out_dir = Path(SETTINGS.out_dir); out_dir.mkdir(parents=True, exist_ok=True)
 
     # Parse hues (degrees) for channels → list[float]
-    hues_deg = [float(x.strip()) for x in SETTINGS.hues.split(",") if x.strip()]
+    hues_deg = [float(x.strip()) for x in SETTINGS.hues_list.split(",") if x.strip()]
 
     rows: List[tuple] = []
     saved_png = 0
@@ -567,7 +567,7 @@ def main() -> None:
 
             vis = draw_polygons_and_centroids(composite, lab_instances,
                                               line=SETTINGS.stroke,
-                                              font_path=SETTINGS.font_name,
+                                              font_path=SETTINGS.font_file,
                                               font_size=SETTINGS.font_size,
                                               connect=(SETTINGS.class_A, SETTINGS.class_B))
             out_png = out_dir / f"overlay_{base}.png"
