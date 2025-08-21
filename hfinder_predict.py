@@ -321,20 +321,26 @@ def channel_scores(det_subset):
     :rtype: tuple[int, float, float, dict[int, float]]
     """
     scores = defaultdict(float)
+    method = HFinder_settings.get("power")
+
+    if method == "log":
+        # Pre-define a function for the log-likelihood scoring
+        def scoring(x):
+            return -math.log(1 - x + 1e-6)
+    else:
+        try:
+            n = int(method)
+        except Exception:
+            HFinder_log.warn(f"Unknown method {method}")
+            n = 4  # Fallback
+        # Pre-define a function for power-based scoring
+        def scoring(x, n=n):
+            return x ** n
+
     for d in det_subset:
         c = int(d["cls"])
         x = float(d.get("conf", 0.0))
-        method = HFinder_settings.get("power")
-        if method == "log":
-            # Log-likelihood-type method.
-            scores[c] += -math.log(1 - x + 1e-6)
-        else:
-            try:
-                n = int(method)
-            except:
-                HFinder_log.warn(f"Unknown method {method}")
-                n = 4 # Back to quartic values
-            scores[c] += x ** n
+        scores[c] += scoring(x)
 
     if not scores:
         return -1, 0.0, 0.0, {}
