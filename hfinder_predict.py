@@ -320,10 +320,21 @@ def channel_scores(det_subset):
              - scores (dict[int, float]): per-class score map (cls → Σ conf²).
     :rtype: tuple[int, float, float, dict[int, float]]
     """
-    scores = {}
+    scores = defaultdic(float)
     for d in det_subset:
         c = int(d["cls"])
-        scores[c] = scores.get(c, 0.0) + float(d.get("conf", 0.0)) ** 4
+        x = float(d.get("conf", 0.0))
+        method = HFinder_settings.get("power")
+        if method == "log":
+            # Log-likelihood-type method.
+            scores[c] += -math.log(1 - x + 1e-6)
+        else:
+            try:
+                n = int(method)
+            except:
+                HFinder_log.warn(f"Unknown method {method}")
+                n = 4 # Back to quartic values
+            scores[c] += x ** n
 
     if not scores:
         return -1, 0.0, 0.0, {}

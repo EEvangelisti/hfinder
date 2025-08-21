@@ -141,5 +141,12 @@
         "long": "validation_frac",
         "default": 0.2,
         "help": "Fraction of the dataset to reserve for validation during training (value between 0 and 1)."
+    },
+    "p": {
+        "mode": "predict",
+        "type": "str",
+        "long": "power",
+        "default": "4",
+        "help": "Function used to calculate weighted confidence scores. Can be a positive integer or 'log'"
     }
 }
