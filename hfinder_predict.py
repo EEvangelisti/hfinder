@@ -320,7 +320,7 @@ def channel_scores(det_subset):
              - scores (dict[int, float]): per-class score map (cls → Σ conf²).
     :rtype: tuple[int, float, float, dict[int, float]]
     """
-    scores = defaultdic(float)
+    scores = defaultdict(float)
     for d in det_subset:
         c = int(d["cls"])
         x = float(d.get("conf", 0.0))
