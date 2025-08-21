@@ -1,5 +1,19 @@
 #!/usr/bin/env python3
+"""
+annot2signal.py
 
+This script extracts per-polygon signal intensities from TIFF images using YOLO/COCO-style annotations. 
+For each object polygon, it computes the centroid coordinates and mean signal intensity, 
+optionally from a different channel than the detection channel (via --signal). 
+The results are written to a TSV table, with one row per object.
+
+Outputs:
+    - A TSV file with columns: Filename, Class, X, Y, Mean
+    - Verification PNG masks where polygons are filled with their original intensities
+
+Usage example:
+    python annot2signal.py -t ./tiffs -a ./jsons -o ./out -c Nucleus -s 2
+"""
 
 import os
 import re
@@ -56,15 +70,30 @@ ARGLIST = {
 
 
 def sanitize(name):
-    """Sanitize pour noms de fichiers."""
+    """
+    Sanitize a string for safe use as a filename.
+
+    :param name: Raw input string
+    :type name: str
+    :return: Sanitized string with only alphanumerics, dot, dash, underscore
+    :rtype: str
+    """
     return re.sub(r"[^A-Za-z0-9+._-]+", "_", name)
 
 
 
 def load_coco_json(base, category, coco_dir):
     """
-    Charge et fusionne les JSON dont le basename commence par ``base``.
-    :returns: (annotations, id_to_name)
+    Load and merge COCO JSON files matching basename and category.
+
+    :param base: Base filename of the TIFF (without extension)
+    :type base: str
+    :param category: Target category name or ID
+    :type category: str
+    :param coco_dir: Path to the folder containing JSON files
+    :type coco_dir: str | Path
+    :return: Tuple of (list of annotations, {category_id: category_name})
+    :rtype: tuple[list[dict], dict[int, str]]
     """
     files = sorted(Path(coco_dir).glob(f"{base}_{category}.json"))
     anns, id_to_name = [], {}
@@ -87,7 +116,19 @@ def load_coco_json(base, category, coco_dir):
 
 
 def extract_frame(arr, ch = 0, z = 0):
-    """Retourne un plan 2D (H,W) depuis (C,H,W) ou (Z,C,H,W)."""
+    """
+    Extract a 2D frame (H,W) from TIFF data.
+
+    :param arr: TIFF array with shape (C,H,W) or (Z,C,H,W)
+    :type arr: np.ndarray
+    :param ch: Channel index (0-based)
+    :type ch: int
+    :param z: Z-slice index if 4D
+    :type z: int
+    :return: 2D image frame
+    :rtype: np.ndarray
+    :raises ValueError: If channel or z index are out of range
+    """
     if arr.ndim == 2:
         return arr
     if arr.ndim == 3:
@@ -108,19 +149,14 @@ def extract_frame(arr, ch = 0, z = 0):
 
 def polygon_to_mask(polygon, shape_hw):
     """
-    Convert a single YOLO polygon into a boolean mask.
+    Convert a YOLO polygon into a binary mask.
 
-    Parameters
-    ----------
-    polygon : list[float] | np.ndarray
-        Flat list [x0, y0, x1, y1, ..., xn, yn] or Nx2 array of polygon vertices.
-    shape_hw : tuple[int, int]
-        (height, width) of the output mask.
-
-    Returns
-    -------
-    np.ndarray of bool
-        Binary mask with True inside the polygon, False outside.
+    :param polygon: Polygon vertices [x0,y0,...] or Nx2 array
+    :type polygon: list[float] | np.ndarray
+    :param shape_hw: Shape of the output mask (H,W)
+    :type shape_hw: tuple[int,int]
+    :return: Binary mask with True inside polygon
+    :rtype: np.ndarray of bool
     """
     H, W = shape_hw
 
@@ -142,23 +178,14 @@ def polygon_to_mask(polygon, shape_hw):
 
 def measure_polygon_mean(frame, polygon):
     """
-    Compute the mean intensity of a single polygon on a given frame.
+    Compute the mean intensity of pixels inside a polygon.
 
-    Parameters
-    ----------
-    frame : np.ndarray
-        2D image array (e.g. one channel of a TIFF).
-    polygon : list[float] or np.ndarray
-        Polygon coordinates (flat list [x1, y1, ..., xn, yn] or Nx2 array).
-    thr : int or None, optional
-        Intensity threshold. If not None, only pixels >= thr are considered.
-        Default is 0 (include all pixels).
-
-    Returns
-    -------
-    float
-        Mean intensity of pixels inside the polygon (after thresholding).
-        NaN if the polygon contains no valid pixels.
+    :param frame: 2D image array
+    :type frame: np.ndarray
+    :param polygon: Polygon coordinates (flat list [x,y,...] or Nx2 array)
+    :type polygon: list[float] | np.ndarray
+    :return: Mean intensity of pixels inside the polygon (NaN if empty)
+    :rtype: float
     """
     H, W = frame.shape
 
@@ -179,9 +206,9 @@ def measure_polygon_mean(frame, polygon):
 
 def parse_arguments():
     """
-    Parse CLI arguments and populate global ``SETTINGS``.
+    Parse CLI arguments and populate global SETTINGS.
 
-    :returns: None (sets global ``SETTINGS``).
+    :return: None (sets global SETTINGS object)
     :rtype: None
     """
     ap = argparse.ArgumentParser(description="Render HFinder predictions.")
@@ -205,6 +232,14 @@ def parse_arguments():
 
 
 def main():
+    """
+    Main entry point.
+    Iterates over TIFFs, loads JSON annotations, extracts polygon signals,
+    saves verification masks and writes results to TSV.
+
+    :return: None
+    :rtype: None
+    """
     parse_arguments()
     os.makedirs(SETTINGS.output_dir, exist_ok=True)
 
@@ -214,9 +249,6 @@ def main():
             Path(SETTINGS.tiff_dir).glob("*.tiff")
         )
     )
-
-    all_ratios = []
-    rows_for_tsv = []
 
     cat_tag = sanitize(str(SETTINGS.category))
     out_tsv = Path(SETTINGS.output_dir) / f"values_{cat_tag}.tsv"
@@ -276,11 +308,10 @@ def main():
                     # Image restreinte au polygone
                     masked_frame = np.zeros_like(frame)
                     masked_frame[mask] = frame[mask]
-                    # Sauvegarde de vérification
                     out_png = Path(SETTINGS.output_dir) / f"{base}_{i}_mask.png"
                     plt.imsave(out_png, masked_frame, cmap="gray")
                     #union_mask |= polygon_to_mask(segs, (H, W))
-                    seg_mean = measure_polygon_mean(frame, [segs])
+                    seg_mean = measure_polygon_mean(frame, segs)
                     
                     M = mask.sum()
                     if M > 0:
@@ -289,7 +320,7 @@ def main():
                     else:
                         cx, cy = np.nan, np.nan
                     
-                    f.write(f"{tif_path.name},{SETTINGS.category},{cx},{cy},{seg_mean}\n")
+                    f.write(f"{tif_path.name}\t{SETTINGS.category}\t{cx}\t{cy}\t{seg_mean}\n")
 
     print(f"✅ Data saved in file '{out_tsv}'")
 
