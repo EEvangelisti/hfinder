@@ -77,6 +77,33 @@ quantitatively, and provide statistical summaries alongside qualitative overlays
 
 ## Measuring Distances
 
+Quantifying spatial relationships between annotated objects is useful in microscopy.
+The `annot2distances.py` utility automates this process. It takes COCO-style 
+JSON annotations and their associated TIFF images, computes object centroids, 
+and measures Euclidean distances either between categories (A→B) or within a 
+single category (A↔A). Results are exported as a CSV table and complemented by 
+optional image overlays for visual inspection.
+
+Key features:
+
+- Centroid-based distances: Distances are calculated between true polygon centroids, not bounding boxes.  
+
+- Flexible pairing: Supports both inter-class (A→B) and intra-class (A↔A) measurements.  
+
+- Multi-dimensional image support: Handles 2D images, multi-channel arrays (C,H,W), and Z-stacks (Z,C,H,W).  
+
+- Automatic file matching: TIFFs and JSONs are linked by basename; multiple JSONs per image are supported.  
+
+- Readable outputs: Results are written to distances.csv, ready for downstream analysis in R, Python, or Excel.  
+
+- Visual validation: PNG overlays display composite images, annotation contours, centroids, and (if enabled) connecting lines between paired objects.  
+
+- Configurable display: Channel coloring, label size, and overlay limits can be adjusted to match dataset needs.  
+
+- Robust error handling: Clear messages are raised for missing annotations, out-of-range channels, or Z-slice mismatches.  
+
+This step is particularly useful for studying spatial organization in microscopy datasets, testing whether two object classes preferentially co-localize, or generating visual evidence to support quantitative summaries.
+
 |Command|Description|Default value|
 |-|-|-|
 |`-t <path>` or<br>`--tiff_dir <path>`|Folder containing TIFF files|Current directory|
