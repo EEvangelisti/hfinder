@@ -51,14 +51,14 @@ ARGLIST = {
             "help": "Output directory for PNG files"
         }
     },
-    "-c": {
+    "-cat": {
         "long": "--category",
         "config": {
             "required": True,
             "help": "Category to analyse"
         }
     },
-    "-s": {
+    "-sig": {
         "long": "--signal",
         "config": {
             "default": "same",
