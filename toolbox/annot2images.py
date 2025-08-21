@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+
 
 """
 Render one PNG per category from COCO predictions aligned to TIFF stacks.

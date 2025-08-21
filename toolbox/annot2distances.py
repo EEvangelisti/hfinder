@@ -47,32 +47,107 @@ import numpy as np
 import tifffile
 from PIL import Image, ImageDraw, ImageFont
 
+SETTINGS = None
+
+ARGLIST = {
+    "-t": {
+        "long": "--tiff_dir",
+        "config": {
+            "default": ".",
+            "help": "Folder containing TIFF files"
+        }
+    },
+    "-a": {
+        "long": "--annotations",
+        "config": {
+            "default": ".",
+            "help": "Folder containing COCO JSON annotations"
+        }
+    },
+    "-o": {
+        "long": "--out_dir",
+        "config": {
+            "default": ".",
+            "help": "Output folder"
+        }
+    },
+    "-clA": {
+        "long": "--class_A",
+        "config": {
+            "required": True,
+            "help": "Primary class name or numeric id"
+        }
+    },
+    "-clB": {
+        "long": "--class_B",
+        "config": {
+            "default": None,
+            "help": "Secondary class name or numeric id (if omitted, within-class A↔A)"
+        }
+    },
+    "-h": {
+        "long": "--hues",
+        "config": {
+            "default": "180,300,0",
+            "help": "Comma-separated hues (degrees) assigned to channels 0,1,2,... e.g. '0,120,240'"
+        }
+    },    
+    "-s": {
+        "long": "--stroke",
+        "config": {
+            "type": int,
+            "default": 2,
+            "help": "Stroke width for drawing overlays"
+        }
+    },
+    "-ttf": {
+        "long": "--font_name",
+        "config": {
+            "default": "DejaVuSans.ttf",
+            "help": "TTF font for labels (fallback to default if missing)"
+        }
+    },
+    "-fsz": {
+        "long": "--font_size",
+        "config": {
+            "type": int,
+            "default": 14,
+            "help": "Font size for labels"
+        }
+    },
+    "-max": {
+        "long": "--max_png",
+        "config": {
+            "type": int,
+            "default": 24,
+            "help": "Max number of PNG overlays to save (to avoid huge dumps)"
+        }
+    }
+}
+
+
 
 # ----------------------------- I/O & parsing ----------------------------- #
 
-def parse_args() -> argparse.Namespace:
+def parse_arguments():
     """
-    Parse CLI arguments.
+    Parse CLI arguments and populate global ``SETTINGS``.
 
-    :return: Parsed arguments.
-    :rtype: argparse.Namespace
+    :returns: None (sets global ``SETTINGS``).
+    :rtype: None
     """
-    ap = argparse.ArgumentParser(
-        description="Compute distances between annotated structures with hue-based overlays."
-    )
-    ap.add_argument("-d", "--tiff_dir", default=".", help="Folder containing TIFF files.")
-    ap.add_argument("-c", "--coco_dir", default=".", help="Folder containing JSON annotations.")
-    ap.add_argument("-o", "--out_dir", default=".", help="Output folder.")
-    ap.add_argument("--classA", required=True, help="Primary class name or numeric id.")
-    ap.add_argument("--classB", default=None, help="Secondary class (if omitted, within-class A↔A).")
-    ap.add_argument("--z", type=int, default=0, help="Z index to use if stacks have Z (default 0).")
-    ap.add_argument("--hues", default="180,300,0",
-                    help="Comma-separated hues (degrees) assigned to channels 0,1,2,... e.g. '0,120,240'.")
-    ap.add_argument("--line", type=int, default=2, help="Stroke width for drawing overlays.")
-    ap.add_argument("--font", default="DejaVuSans.ttf", help="TTF font for labels (fallback to default if missing).")
-    ap.add_argument("--font_size", type=int, default=14, help="Font size for labels.")
-    ap.add_argument("--max_png", type=int, default=24, help="Max number of PNG overlays to save (to avoid huge dumps).")
-    return ap.parse_args()
+    ap = argparse.ArgumentParser(description="Render HFinder predictions.")
+    for short, param in ARGLIST.items():
+        config = param["config"]
+        if "default" in config:
+            config["help"] = f"{config['help']} (default: {config['default']})"
+        ap.add_argument(short, param["long"], **config)
+    global SETTINGS 
+    SETTINGS = ap.parse_args()
+    print(f"SETTINGS {'-' * 71}")
+    for k, v in vars(SETTINGS).items():
+        print(f"[INFO] '{k}' = {v}")
+    print('-' * 80)
 
 
 def load_all_coco_for_base(base: str, coco_dir: str | Path) -> tuple[list[dict], dict[int, str]]:
@@ -371,7 +446,8 @@ def draw_polygons_and_centroids(rgb: Image.Image,
     if connect is not None:
         labelA, labelB = connect
         ptsA = [c for c, l in centroids if l == labelA]
-        ptsB = [c for c, l in centroids if l == labelB]
+        targetB = labelA if labelB is None else labelB
+        ptsB = [c for c, l in centroids if l == targetB]
 
         for (ax, ay) in ptsA:
             for (bx, by) in ptsB:
@@ -389,20 +465,20 @@ def main() -> None:
     :return: None
     :rtype: None
     """
-    args = parse_args()
-    out_dir = Path(args.out_dir); out_dir.mkdir(parents=True, exist_ok=True)
+    parse_args()
+    out_dir = Path(SETTINGS.out_dir); out_dir.mkdir(parents=True, exist_ok=True)
 
     # Parse hues (degrees) for channels → list[float]
-    hues_deg = [float(x.strip()) for x in args.hues.split(",") if x.strip()]
+    hues_deg = [float(x.strip()) for x in SETTINGS.hues.split(",") if x.strip()]
 
     rows: List[tuple] = []
     saved_png = 0
 
-    tiff_paths = sorted(chain(Path(args.tiff_dir).glob("*.tif"),
-                              Path(args.tiff_dir).glob("*.tiff")))
+    tiff_paths = sorted(chain(Path(SETTINGS.tiff_dir).glob("*.tif"),
+                              Path(SETTINGS.tiff_dir).glob("*.tiff")))
     for tif_path in tiff_paths:
         base = tif_path.stem
-        anns, id2name = load_all_coco_for_base(base, args.coco_dir)
+        anns, id2name = load_all_coco_for_base(base, SETTINGS.annotations)
         if not anns:
             continue
 
@@ -414,8 +490,8 @@ def main() -> None:
                 return {int(token)}
             return {cid for cid, nm in id2name.items() if nm == token}
 
-        A_ids = normalize_class(args.classA)
-        B_ids = normalize_class(args.classB) if args.classB else set()
+        A_ids = normalize_class(SETTINGS.class_A)
+        B_ids = normalize_class(SETTINGS.class_B) if SETTINGS.class_B else set()
 
         arr = tifffile.imread(tif_path)
         # Build composite (HSV) for visualization
@@ -428,7 +504,8 @@ def main() -> None:
                 for ch in chs:
                     channels_used.add(ch)
         channels_used = np.array(sorted(channels_used), dtype=int)
-        composite = hsv_composite_from_channels(arr, hues_deg, z=args.z, channels=channels_used)
+        # FIXME: create an option for Z value when processing Z-stacks.
+        composite = hsv_composite_from_channels(arr, hues_deg, z=0, channels=channels_used)
 
         # Collect polygons by class
         polys_A: List[list[float]] = []
@@ -442,7 +519,7 @@ def main() -> None:
             poly = segs[0] if isinstance(segs, list) else segs  # YOLO: single polygon
             if cid in A_ids:
                 polys_A.append(poly)
-            elif args.classB and cid in B_ids:
+            elif SETTINGS.class_B and cid in B_ids:
                 polys_B.append(poly)
 
         # Centroids
@@ -455,7 +532,7 @@ def main() -> None:
                 A_pts.append((cx, cy))
         A_pts = np.asarray(A_pts, dtype=np.float32).reshape(-1, 2)
 
-        if args.classB:
+        if SETTINGS.class_B:
             B_pts = []
             for poly in polys_B:
                 m = polygon_to_mask(poly, (H, W))
@@ -480,19 +557,19 @@ def main() -> None:
                 pass
 
         # Draw overlay with polygon outlines + centroids (labels are class names)
-        if saved_png < args.max_png:
+        if saved_png < SETTINGS.max_png:
             lab_instances = []
             for poly in polys_A:
-                lab_instances.append((poly, f"{args.classA}"))
-            if args.classB:
+                lab_instances.append((poly, f"{SETTINGS.class_A}"))
+            if SETTINGS.class_B:
                 for poly in polys_B:
-                    lab_instances.append((poly, f"{args.classB}"))
+                    lab_instances.append((poly, f"{SETTINGS.class_B}"))
 
             vis = draw_polygons_and_centroids(composite, lab_instances,
-                                              line=args.line,
-                                              font_path=args.font,
-                                              font_size=args.font_size,
-                                              connect=(args.classA, args.classB))
+                                              line=SETTINGS.stroke,
+                                              font_path=SETTINGS.font_name,
+                                              font_size=SETTINGS.font_size,
+                                              connect=(SETTINGS.class_A, SETTINGS.class_B))
             out_png = out_dir / f"overlay_{base}.png"
             vis.save(out_png)
             saved_png += 1
