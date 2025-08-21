@@ -1,74 +1,92 @@
 #!/usr/bin/env python3
-"""
-annot2enrichment.py — Quantifier l’enrichissement d’intensité par polygone et tracer un box plot.
 
-Fonctions clés
-- Parcourt des TIFF confocaux (formes (C,H,W) ou (Z,C,H,W)).
-- Charge les annotations associées (même basename).
-- Sélectionne une catégorie (``-cat/--category``).
-- Par image et canal :
-  1) crée le masque union de tous les polygones de la catégorie ;
-  2) détermine un **seuil** d’intensité (Otsu par défaut, ou valeur fournie via ``-th/--threshold``) ;
-  3) calcule la **moyenne de fond** sur les pixels **hors polygones ET au-dessus du seuil** ;
-  4) calcule la **moyenne d’intensité** pour chaque polygone **au-dessus du seuil** (indépendants) ;
-  5) en déduit le **ratio d’enrichissement** = mean(polygone)/mean(fond).
-- Produit un **box plot** avec les **points individuels** et (en option) un TSV.
-
-Usage
-.. code-block:: bash
-
-    python annot2enrichment.py \
-        -d /path/to/tiffs \
-        -c /path/to/jsons \
-        -o /path/to/out \
-        -cat "Noyau" \
-        [--z 0] \
-        [--threshold 1200]   # sinon Otsu par défaut
-        [--save-tsv]
-"""
 
 import os
 import re
 import json
+import numpy as np
+import tifffile
 import argparse
+import matplotlib.pyplot as plt
 from pathlib import Path
 from itertools import chain
 from collections import defaultdict
-
-import numpy as np
-import tifffile
-import matplotlib
-matplotlib.use("Agg")  # rendu hors écran
-import matplotlib.pyplot as plt
-from skimage import filters
 from PIL import Image, ImageDraw
 
+SETTINGS = None
 
-# ----------------------------- Utilitaires ----------------------------- #
+ARGLIST = {
+    "-t": {
+        "long": "--tiff_dir",
+        "config": {
+            "default": ".",
+            "help": "Folder containing TIFF files"
+        }
+    },
+    "-a": {
+        "long": "--annotations",
+        "config": {
+            "default": ".",
+            "help": "Output directory for COCO JSON files"
+        }
+    },
+    "-o": {
+        "long": "--output_dir",
+        "config": {
+            "default": ".",
+            "help": "Output directory for PNG files"
+        }
+    },
+    "-c": {
+        "long": "--category",
+        "config": {
+            "required": True,
+            "help": "Category to analyse"
+        }
+    },
+    "-s": {
+        "long": "--signal",
+        "config": {
+            "default": "same",
+            "help": "Index of the channel used to retrieve signal. 'same' = use the detection channel"
+        }
+    }
+}
 
-def sanitize(name: str) -> str:
+
+
+def sanitize(name):
     """Sanitize pour noms de fichiers."""
     return re.sub(r"[^A-Za-z0-9+._-]+", "_", name)
 
 
-def load_all_coco_for_base(base, category, coco_dir):
+
+def load_coco_json(base, category, coco_dir):
     """
     Charge et fusionne les JSON dont le basename commence par ``base``.
     :returns: (annotations, id_to_name)
     """
     files = sorted(Path(coco_dir).glob(f"{base}_{category}.json"))
     anns, id_to_name = [], {}
+ 
     for fp in files:
         with open(fp, "r") as f:
             d = json.load(f)
+  
+        # Use 0-based hf_channels
+        if "hf_channels" in d:
+            d["hf_channels"] = [c - 1 for c in d["hf_channels"]]
+  
         for c in d.get("categories", []):
             cid = int(c["id"])
             id_to_name[cid] = c.get("name", f"class_{cid}")
         anns.extend(d.get("annotations", []))
+
     return anns, id_to_name
 
 
-def extract_frame(arr: np.ndarray, ch: int = 0, z: int = 0) -> np.ndarray:
+
+def extract_frame(arr, ch = 0, z = 0):
     """Retourne un plan 2D (H,W) depuis (C,H,W) ou (Z,C,H,W)."""
     if arr.ndim == 2:
         return arr
@@ -87,144 +105,141 @@ def extract_frame(arr: np.ndarray, ch: int = 0, z: int = 0) -> np.ndarray:
     raise ValueError(f"Unsupported image shape {arr.shape}; expected (C,H,W) or (Z,C,H,W).")
 
 
-def polygons_to_mask(polygons: list, shape_hw: tuple[int, int]) -> np.ndarray:
+
+def polygon_to_mask(polygon, shape_hw):
     """
-    Rasterise des polygones style COCO en masque booléen.
-    polygons: liste de listes plates [x0,y0,x1,y1,...], possiblement multiples par instance.
+    Convert a single YOLO polygon into a boolean mask.
+
+    Parameters
+    ----------
+    polygon : list[float] | np.ndarray
+        Flat list [x0, y0, x1, y1, ..., xn, yn] or Nx2 array of polygon vertices.
+    shape_hw : tuple[int, int]
+        (height, width) of the output mask.
+
+    Returns
+    -------
+    np.ndarray of bool
+        Binary mask with True inside the polygon, False outside.
     """
     H, W = shape_hw
+
+    # Normalize input polygon format
+    if isinstance(polygon, list):
+        polygon = np.array(polygon).reshape(-1, 2)
+    elif isinstance(polygon, np.ndarray) and polygon.ndim == 1:
+        polygon = polygon.reshape(-1, 2)
+
+    # Draw mask
     mask = Image.new("1", (W, H), 0)
     draw = ImageDraw.Draw(mask)
-    for seg in polygons:
-        if not isinstance(seg, list) or len(seg) < 6:
-            continue
-        pts = [(int(seg[i]), int(seg[i + 1])) for i in range(0, len(seg), 2)]
-        draw.polygon(pts, outline=1, fill=1)
+    pts = [(int(x), int(y)) for x, y in polygon]
+    draw.polygon(pts, outline=1, fill=1)
+
     return np.array(mask, dtype=bool)
 
 
-def apply_threshold(img: np.ndarray, method: str = "otsu") -> float:
+
+def measure_polygon_mean(frame, polygon):
     """
-    Apply a scikit-image thresholding method and return the numeric threshold.
+    Compute the mean intensity of a single polygon on a given frame.
 
-    Supported methods: "otsu", "isodata", "li", "yen", "triangle", "mean"
-    """
-    method = method.lower()
-    if method == "otsu":
-        return float(filters.threshold_otsu(img))
-    elif method == "isodata":
-        return float(filters.threshold_isodata(img))
-    elif method == "li":
-        return float(filters.threshold_li(img))
-    elif method == "yen":
-        return float(filters.threshold_yen(img))
-    elif method == "triangle":
-        return float(filters.threshold_triangle(img))
-    elif method == "mean":
-        return float(filters.threshold_mean(img))
-    else:
-        raise ValueError(f"Unknown thresholding method: {method}")
+    Parameters
+    ----------
+    frame : np.ndarray
+        2D image array (e.g. one channel of a TIFF).
+    polygon : list[float] or np.ndarray
+        Polygon coordinates (flat list [x1, y1, ..., xn, yn] or Nx2 array).
+    thr : int or None, optional
+        Intensity threshold. If not None, only pixels >= thr are considered.
+        Default is 0 (include all pixels).
 
-
-# ------------------------- Mesure & normalisation ------------------------- #
-
-def measure_polygon_means(frame, polygons, thr=0):
-    """
-    Moyenne d’intensité par polygone (pixels au-dessus du seuil si thr non None).
+    Returns
+    -------
+    float
+        Mean intensity of pixels inside the polygon (after thresholding).
+        NaN if the polygon contains no valid pixels.
     """
     H, W = frame.shape
-    means = []
-    for poly in polygons:
-        # normalise : une instance peut être [seg1, seg2, ...] ou directement seg
-        segs = poly if (isinstance(poly, list) and poly and isinstance(poly[0], list)) else [poly]
-        m = polygons_to_mask(segs, (H, W))
-        if thr is not None:
-            m = m & (frame >= thr)
-        if not m.any():
-            means.append(float("nan"))
-            continue
-        vals = frame[m]
-        means.append(float(vals.mean()))
-    return means[0]
 
+    if isinstance(polygon, list):
+        polygon = np.array(polygon).reshape(-1, 2)
+    elif isinstance(polygon, np.ndarray) and polygon.ndim == 1:
+        polygon = polygon.reshape(-1, 2)
 
-def background_mean_excluding(frame: np.ndarray, mask_union: np.ndarray, thr: float | None) -> float:
-    """
-    Moyenne du fond sur les pixels **hors polygones** et **au-dessus du seuil** (si thr non None).
-    """
-    bg = ~mask_union
-    if thr is not None:
-        bg = bg & (frame >= thr)
-    if not bg.any():
+    m = polygon_to_mask(polygon, (H, W))
+
+    if not m.any():
         return float("nan")
-    return float(frame[bg].mean())
+
+    vals = frame[m]
+    return float(vals.mean())
 
 
-# ------------------------------- Arguments ------------------------------- #
 
 def parse_arguments():
-    ap = argparse.ArgumentParser(description="Extraire l’enrichissement d’intensité par polygone et tracer un box plot.")
-    ap.add_argument("-d", "--tiff_dir", default=".", help="Dossier des TIFF (default: .)")
-    ap.add_argument("-c", "--coco_dir", default=".", help="Dossier des annotations JSON (default: .)")
-    ap.add_argument("-o", "--out_dir",  default=".", help="Dossier de sortie (default: .)")
-    ap.add_argument("-cat", "--category", required=True,
-                    help="Catégorie à analyser (id numérique ou nom exact).")
-    ap.add_argument(
-        "-s", "--signal",
-        default="same",
-        help="Index of the channel used to retrieve signal. 'same' = use the detection channel."
-    )
-    ap.add_argument("--z", type=int, default=0, help="Index Z si présent (default: 0)")
-    ap.add_argument("--save-tsv", action="store_true", help="Sauver aussi les valeurs par polygone (TSV).")
-    ap.add_argument("-th", "--threshold", default="otsu",
-                    help="Seuil d’intensité. 'otsu' (défaut) ou une valeur numérique (ex. 1200).")
-    return ap.parse_args()
+    """
+    Parse CLI arguments and populate global ``SETTINGS``.
+
+    :returns: None (sets global ``SETTINGS``).
+    :rtype: None
+    """
+    ap = argparse.ArgumentParser(description="Render HFinder predictions.")
+    for short, param in ARGLIST.items():
+        config = param["config"]
+        if "default" in config:
+            config["help"] = f"{config['help']} (default: {config['default']})"
+        ap.add_argument(short, param["long"], **config)
+    global SETTINGS 
+    SETTINGS = ap.parse_args()
+    
+    # 0-based channel
+    if SETTINGS.signal != "same":
+        SETTINGS.signal = int(SETTINGS.signal) - 1
+
+    print(f"SETTINGS {'-' * 71}")
+    for k, v in vars(SETTINGS).items():
+        print(f"[INFO] '{k}' = {v}")
+    print('-' * 80)
 
 
-# ------------------------------ Programme ------------------------------- #
 
 def main():
-    args = parse_arguments()
-    os.makedirs(args.out_dir, exist_ok=True)
+    parse_arguments()
+    os.makedirs(SETTINGS.output_dir, exist_ok=True)
 
-    print("annot2enrichment: start")
-    print(f" - tiff_dir = {args.tiff_dir}")
-    print(f" - coco_dir = {args.coco_dir}")
-    print(f" - out_dir  = {args.out_dir}")
-    print(f" - category = {args.category}")
-    print(f" - z        = {args.z}")
-    print(f" - threshold= {args.threshold}")
-
-    # Collecte des TIFF
     tiff_paths = sorted(
-        chain(Path(args.tiff_dir).glob("*.tif"), Path(args.tiff_dir).glob("*.tiff"))
+        chain(
+            Path(SETTINGS.tiff_dir).glob("*.tif"),
+            Path(SETTINGS.tiff_dir).glob("*.tiff")
+        )
     )
 
     all_ratios = []
     rows_for_tsv = []
 
-    cat_tag = sanitize(str(args.category))
-    out_tsv = Path(args.out_dir) / f"values_{cat_tag}.tsv"
+    cat_tag = sanitize(str(SETTINGS.category))
+    out_tsv = Path(SETTINGS.output_dir) / f"values_{cat_tag}.tsv"
     with open(out_tsv, "w") as f:
         f.write("Filename\tClass\tX\tY\tMean\n")
         for tif_path in tiff_paths:
             base = tif_path.stem
             print(f"Processing {tif_path.name}")
-            anns, id_to_name = load_all_coco_for_base(base, args.category, args.coco_dir)
+            anns, id_to_name = load_coco_json(base, SETTINGS.category, SETTINGS.annotations)
             if not anns:
                 print(f"   ⚠️ No annotations, skipping.")
                 continue
 
             # Get class ID
             selected_class = set()
-            if args.category.isdigit():
-                selected_class.add(int(args.category))
+            if SETTINGS.category.isdigit():
+                selected_class.add(int(SETTINGS.category))
             else:
                 for cid, nm in id_to_name.items():
-                    if nm == args.category:
+                    if nm == SETTINGS.category:
                         selected_class.add(cid)
             if not selected_class:
-                print(f"   ⚠️ Unknown category {args.category}.")
+                print(f"   ⚠️ Unknown category {SETTINGS.category}.")
                 continue
 
             arr = tifffile.imread(tif_path)
@@ -247,32 +262,25 @@ def main():
                 continue
 
             for ch, poly_list in sorted(by_ch.items()):
-                if args.signal == "same":
-                    signal_ch = ch - 1
+                if SETTINGS.signal == "same":
+                    signal_ch = ch
                 else:
-                    signal_ch = int(args.signal) - 1
+                    signal_ch = int(SETTINGS.signal)
                     if not (0 <= signal_ch < arr.shape[-3 if arr.ndim == 4 else -3+1]):
                         raise ValueError(f"   ❌ Signal channel {signal_ch} out of bounds for shape {arr.shape}")
-                frame = extract_frame(arr, ch=signal_ch, z=args.z)
-
-                # Seuil (Otsu par défaut ou valeur fournie)
-                thr_val = None
-                if isinstance(args.threshold, str):
-                    thr_val = apply_threshold(frame, args.threshold)
-                else:
-                    thr_val = float(args.threshold)
-               
-                union_mask = np.zeros((H, W), dtype=bool)
+                frame = extract_frame(arr, ch=signal_ch)
+           
+                #union_mask = np.zeros((H, W), dtype=bool)
                 for i, segs in enumerate(poly_list):
-                    mask = polygons_to_mask(segs, (H, W))
+                    mask = polygon_to_mask(segs, (H, W))
                     # Image restreinte au polygone
                     masked_frame = np.zeros_like(frame)
                     masked_frame[mask] = frame[mask]
                     # Sauvegarde de vérification
-                    out_png = Path(args.out_dir) / f"{base}_{i}_mask.png"
+                    out_png = Path(SETTINGS.output_dir) / f"{base}_{i}_mask.png"
                     plt.imsave(out_png, masked_frame, cmap="gray")
-                    union_mask |= polygons_to_mask(segs, (H, W))
-                    seg_mean = measure_polygon_means(frame, [segs], 0)
+                    #union_mask |= polygon_to_mask(segs, (H, W))
+                    seg_mean = measure_polygon_mean(frame, [segs])
                     
                     M = mask.sum()
                     if M > 0:
@@ -281,7 +289,7 @@ def main():
                     else:
                         cx, cy = np.nan, np.nan
                     
-                    f.write(f"{tif_path.name},{args.category},{cx},{cy},{seg_mean}\n")
+                    f.write(f"{tif_path.name},{SETTINGS.category},{cx},{cy},{seg_mean}\n")
 
     print(f"✅ Data saved in file '{out_tsv}'")
 
