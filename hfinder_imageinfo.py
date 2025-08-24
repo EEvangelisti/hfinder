@@ -84,7 +84,7 @@ def initialize():
     
     # Locate the classes directory from settings and validate it.
     tiff_dir = HFinder_settings.get("tiff_dir")
-    class_dir = os.path.join(tiff_dir, "classes")
+    class_dir = os.path.join(tiff_dir, "hf_classes")
     if not os.path.isdir(class_dir):
         HFinder_log.fail(f"No such directory: {class_dir}", exit_code=4)
 
