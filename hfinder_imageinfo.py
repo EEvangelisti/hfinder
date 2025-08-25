@@ -48,6 +48,8 @@ CURRENT_CLASS = None
 # Set to None until initialize() has successfully completed.
 CLASS_INSTRUCTIONS = None
 
+HIDDEN_CHANNELS = None
+
 
 
 def initialize():
@@ -91,6 +93,14 @@ def initialize():
     # Gather all class definition files and derive class names from filenames.
     class_files = sorted(glob(os.path.join(class_dir, "*.json")))
     class_names = [os.path.splitext(os.path.basename(f))[0] for f in class_files]
+
+    # Get hidden channels
+    special_dir = os.path.join(tiff_dir, "hf_special")
+    if os.path.isdir(class_dir):    
+        json_file = os.path.join(special_dir, "hidden_channels.json")
+        with open(json_file, "r") as f:
+            global HIDDEN_CHANNELS
+            HIDDEN_CHANNEL = json.load(f)
 
     # ----------------------------------------------------------------------
     # Step 1: build class-wise image mappings
@@ -227,6 +237,30 @@ def to_frame(img_class=None, default=0):
         return default if x <= 0 else x - 1
     except:
         return default
+
+
+
+def is_hidden_channel(n):
+    """
+    Returns True if channel `n` is hidden in the current image.
+
+    :rtype: bool
+    """
+    assert n > 0, f"HFinder_ImageInfo.is_hidden_channel({n})"
+    try:
+        return HIDDEN_CHANNELS[CURRENT_IMAGE] == n
+    except:
+        return False
+
+
+
+def get_name():
+    """
+    Returns the name of the current image.
+
+    :rtype: str
+    """
+    return CURRENT_IMAGE
 
 
 

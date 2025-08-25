@@ -324,6 +324,7 @@ def split_touching_watershed(binary):
     return contours
 
 
+
 def filter_contours_min_area(contours):
     """
     Keep only contours whose area is at least the configured minimum.

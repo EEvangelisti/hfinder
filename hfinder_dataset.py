@@ -518,17 +518,15 @@ def max_intensity_projection_multichannel(img_name, base, stack, polygons_per_ch
                 continue
 
             # Fused binary mask for the class on the MIP channel
-            mask = np.zeros((h, w), dtype=np.uint8)
+            mask = np.zeros((size, size), dtype=np.uint8)
             cv2.fillPoly(mask, all_polys_px, 255)
 
+            clean_mask = HFinder_segmentation.noise_and_gaps(mask)
             # Persist the fused class mask (for QA or reuse)
             mask_path = os.path.join(masks_dir, f"{base}_MIP_{class_name}_mask.png")
-            cv2.imwrite(mask_path, mask)
-
+            cv2.imwrite(mask_path, clean_mask)
             # Extract refined contours and convert to YOLO polygons
-            final_contours, _ = HFinder_segmentation.find_fine_contours(
-                mask, scale=3, canny=True, eps=0.3, min_perimeter=25
-            )
+            final_contours = HFinder_segmentation.mask_to_polygons(clean_mask)
             yolo_polygons = HFinder_geometry.contours_to_yolo_polygons(final_contours)
  
             ch_key = ch + 1   # 1-based
@@ -599,7 +597,7 @@ def generate_training_dataset():
         generate_dataset(base, n, c, channels, polygons_per_channel)
 
         # Optional MIP export when multiple Z-slices exist
-        if n > 1:
+        if n > 1 and False:
             max_intensity_projection_multichannel(
                 img_name, base, img, polygons_per_channel,
                 class_ids, n, c, ratio

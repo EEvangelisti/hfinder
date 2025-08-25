@@ -146,7 +146,7 @@ def load_class_definitions():
     :return: Mapping from class name to class ID, e.g., {"hyphae": 0, "nuclei": 1}.
     :rtype: dict[str, int]
     """
-    class_dir = os.path.join(HFinder_settings.get("tiff_dir"), "classes")
+    class_dir = os.path.join(HFinder_settings.get("tiff_dir"), "hf_classes")
     if not os.path.isdir(class_dir):
         HFinder_log.fail(f"No such directory: {class_dir}")
 
