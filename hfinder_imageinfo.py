@@ -100,7 +100,8 @@ def initialize():
         json_file = os.path.join(special_dir, "hidden_channels.json")
         with open(json_file, "r") as f:
             global HIDDEN_CHANNELS
-            HIDDEN_CHANNEL = json.load(f)
+            HIDDEN_CHANNELS = json.load(f)
+          
 
     # ----------------------------------------------------------------------
     # Step 1: build class-wise image mappings
@@ -247,6 +248,8 @@ def is_hidden_channel(n):
     :rtype: bool
     """
     assert n > 0, f"HFinder_ImageInfo.is_hidden_channel({n})"
+    assert CURRENT_IMAGE is not None, "CURRENT_IMAGE not initialized"
+    assert HIDDEN_CHANNELS is not None, "HIDDEN_CHANNELS not initialized"
     try:
         return HIDDEN_CHANNELS[CURRENT_IMAGE] == n
     except:

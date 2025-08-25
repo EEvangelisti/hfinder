@@ -26,6 +26,7 @@ Notes
 import cv2
 import numpy as np
 from matplotlib.colors import hsv_to_rgb
+import hfinder_log as HFinder_log
 import hfinder_palette as HFinder_palette
 import hfinder_settings as HFinder_settings
 import hfinder_imageinfo as HFinder_ImageInfo
@@ -98,7 +99,7 @@ def resize_multichannel_image(img):
         for c_i in range(c):
             index = n_i * c + c_i # global frame index
             if HFinder_ImageInfo.is_hidden_channel(c_i + 1):
-                HFinder_log.info(f"Hidding channel {c_i + 1} in {HFinder_ImageInfo.get_name()}")
+                HFinder_log.info(f"Hiding channel {c_i + 1} in {HFinder_ImageInfo.get_name()}")
                 frame = np.zeros((size, size), dtype=img.dtype)
             else:
                 frame = img[c_i] if n == 1 else img[n_i][c_i]
