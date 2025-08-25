@@ -388,7 +388,7 @@ def auto_threshold_strategy(img, threshold):
     
     # Optional: exhaustive threshold exploration for debugging/papers
     if False: # FIXME: Insert this with an option
-        base = HFinder_settings.get("current_image.base")
+        base = HFinder_ImageInfo.get_current_base()
         fig, _ = skimage.filters.try_all_threshold(img)
         root = HFinder_folders.get_masks_dir()
         output = os.path.join(root, f"{base}_all_threshold.jpg")
