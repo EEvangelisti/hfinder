@@ -7,21 +7,25 @@ import hfinder_predict as HFinder_predict
 import hfinder_settings as HFinder_settings
 
 
-def preprocess(args, mode="preprocess"):
-    HFinder_settings.load(args)
-    HFinder_settings.print_summary(mode)
+def preprocess(args):
+    if args is not None:
+        HFinder_settings.load(args)
+    HFinder_settings.print_summary()
     HFinder_folders.create_session_folders()
     HFinder_dataset.generate_training_dataset()
 
 
 def train(args):
-    preprocess(args, mode="train")
+    HFinder_settings.load(args)
+    HFinder_settings.set("running_mode", "train")
+    preprocess(None)
     HFinder_train.run()
 
 
 def predict(args):
     HFinder_settings.load(args)
-    HFinder_settings.print_summary("predict")
+    HFinder_settings.set("running_mode", "predict")
+    HFinder_settings.print_summary()
     HFinder_folders.create_session_folders()
     HFinder_predict.run()
 

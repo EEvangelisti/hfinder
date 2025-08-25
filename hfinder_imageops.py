@@ -98,7 +98,7 @@ def resize_multichannel_image(img):
     for n_i in range(n):
         for c_i in range(c):
             index = n_i * c + c_i # global frame index
-            if HFinder_ImageInfo.is_hidden_channel(c_i + 1):
+            if HFinder_settings.get("running_mode") in ["preprocess", "train"] and HFinder_ImageInfo.is_hidden_channel(c_i + 1):
                 HFinder_log.info(f"Hiding channel {c_i + 1} in {HFinder_ImageInfo.get_name()}")
                 frame = np.zeros((size, size), dtype=img.dtype)
             else:
