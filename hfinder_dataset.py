@@ -576,8 +576,7 @@ def generate_training_dataset():
     for img_path in image_paths:
         img_name = os.path.basename(img_path)
         HFinder_ImageInfo.set_current_image(img_name)
-        base = os.path.splitext(img_name)[0]
-        HFinder_settings.set("current_image.base", base)
+        img_base = HFinder_ImageInfo.get_current_base()
 
         if not HFinder_ImageInfo.image_has_instructions():
             HFinder_log.warn(f"Skipping file {img_name} - no annotations")
@@ -593,13 +592,14 @@ def generate_training_dataset():
         polygons_per_channel = prepare_class_inputs(channels, n, c, ratio)
         
         # QA overlays then dataset generation
-        generate_contours(base, polygons_per_channel, channels, class_ids)     
-        generate_dataset(base, n, c, channels, polygons_per_channel)
+        generate_contours(img_base, polygons_per_channel, channels, class_ids)     
+        generate_dataset(img_base, n, c, channels, polygons_per_channel)
 
         # Optional MIP export when multiple Z-slices exist
+        # FIXME: currently deactivated because it is not satisfactory.
         if n > 1 and False:
             max_intensity_projection_multichannel(
-                img_name, base, img, polygons_per_channel,
+                img_name, img_base, img, polygons_per_channel,
                 class_ids, n, c, ratio
             )
 

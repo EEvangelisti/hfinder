@@ -48,6 +48,7 @@ CURRENT_CLASS = None
 # Set to None until initialize() has successfully completed.
 CLASS_INSTRUCTIONS = None
 
+# Channels to skip when building training images.
 HIDDEN_CHANNELS = None
 
 
@@ -264,6 +265,17 @@ def get_name():
     :rtype: str
     """
     return CURRENT_IMAGE
+
+
+
+def get_current_base():
+    """
+    Returns the name of the current image without its extension
+
+    :rtype: str
+    """
+    assert CURRENT_IMAGE is not None, "HFinder_ImageInfo.get_current_base"
+    return os.path.splitext(CURRENT_IMAGE)[0]
 
 
 
