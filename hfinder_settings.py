@@ -36,7 +36,7 @@ Notes
 
 import ast
 import json
-from pydoc import locate
+import pydoc
 import hfinder_log as HFinder_log
 
 # Each setting is defined by a short name, a long name, a type, a default value,
@@ -54,18 +54,13 @@ with open("hfinder_settings.json", "r") as f:
 for key in list(SETTINGS.keys()):
     elt = SETTINGS[key]
 
-    py_type = locate(elt["type"]) if "type" in elt else bool
-    elt["type"] = py_type
-    if "long" in elt:
-        # Map long name to short key for indirection in get()/load().
-        SETTINGS[elt["long"]] = key
-
-    if elt["type"] is tuple:
-        # Tuples are given textually; parse safely.
-        elt["default"] = ast.literal_eval(elt["default"])
-    elif "default" in elt:
-        # Coerce string defaults to the declared Python type.
+    elt["type"] = pydoc.locate(elt["type"]) if "type" in elt else bool
+    # Map long name to short key for indirection in get()/load().
+    SETTINGS[elt["long"]] = key
+    # Coerce string defaults to the declared Python type.
+    if "default" in elt:
         elt["default"] = py_type(elt["default"])
+
 
 
 def compatible_modes(actual, expected):
@@ -105,24 +100,18 @@ def define_arguments(parser, mode):
     :type mode: str
     :rtype: None
     """
-    
+  
     # Select only non-alias entries relevant to the requested mode.
     subset = {x: SETTINGS[x] for x in SETTINGS.keys() 
               if not isinstance(SETTINGS[x], str) and \
               compatible_modes(SETTINGS[x]["mode"], mode)}
 
     for cmd in subset.keys():
-        if "default" in SETTINGS[cmd]:
-            parser.add_argument(f"-{cmd}", f"--{SETTINGS[cmd]['long']}",
-                                type=SETTINGS[cmd]["type"],
-                                default=SETTINGS[cmd]["default"],
-                                help=f"{SETTINGS[cmd]['help']} (default: \
-                                     {SETTINGS[cmd]['default']})")
-        else:
-            # Flag-style boolean without an explicit default.
-            parser.add_argument(f"-{cmd}", f"--{SETTINGS[cmd]['long']}",
-                                action="store_true",
-                                help=f"{SETTINGS[cmd]['help']}")
+        param = SETTINGS[cmd]
+        config = param["config"]
+        if "default" in config:
+            config["help"] = f"{config['help']} (default: {config['default']})"
+        parser.add_argument(f"-{cmd}", f"--{param['long']}", **config)
 
 
 
@@ -167,7 +156,7 @@ def load(args):
                     raise ValueError(f"Could not convert {val} to {expected_type}")
 
             # Update the effective default for downstream consumers.
-            elt["default"] = val
+            elt["config"]["default"] = val
 
 
 
@@ -188,12 +177,12 @@ def get(key):
         if isinstance(out, str):
             # Indirection: `SETTINGS[long] = short`
             if out in SETTINGS:
-                return SETTINGS[out]["default"]
+                return SETTINGS[out]["config"]["default"]
             else:
-                # Fallback: if alias does not resolve, return raw string.
+                # Fallback: if alias does not resolve, return associated value.
                 return out
         else:
-            return SETTINGS[key]["default"]
+            return out["config"]["default"]
     else:
         return None
 
@@ -236,7 +225,6 @@ def print_summary():
     for key in SETTINGS.keys():
         if isinstance(SETTINGS[key], dict):
             if compatible_modes(SETTINGS[key]['mode'], SETTINGS["running_mode"]):
-                value = False if "default" not in SETTINGS[key] else SETTINGS[key]['default']
-                HFinder_log.info(f"[SETTING] '{SETTINGS[key]['long']}' " + \
-                                 f"= {SETTINGS[key]['default']}")
+                value = False if "default" not in SETTINGS[key]["config"] else SETTINGS[key]["config"]['default']
+                HFinder_log.info(f"[SETTING] '{SETTINGS[key]['long']}' = {value}")
 

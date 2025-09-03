@@ -3,101 +3,132 @@
         "mode": "predict",
         "type": "int",
         "long": "batch",
-        "default": 8,
-        "help": "Batch size used for running YOLO predictions. Larger batch sizes can provide higher throughput."
+        "config": {
+            "default": 8,
+            "help": "Batch size used for running YOLO predictions. Larger batch sizes can provide higher throughput."
+        }
     },
     "c": {
         "mode": "predict",
         "type": "float",
         "long": "confidence",
-        "default": 0.25,
-        "help": "Minimum confidence threshold for detections. Objects detected with confidence below this threshold will be disregarded."
+        "config": {
+            "default": 0.25,
+            "help": "Minimum confidence threshold for detections. Objects detected with confidence below this threshold will be disregarded."
+        }
     },
     "d": {
         "mode": "predict",
         "type": "str",
         "long": "device",
-        "default": "cpu",
-        "help": "Computation device for PyTorch (e.g. 'cpu', '0' for GPU)."
+        "config": {
+            "default": "cpu",
+            "help": "Computation device for PyTorch (e.g. 'cpu', '0' for GPU)."
+        }
     },
     "dbg": {
         "mode": "*",
         "long": "debug",
-        "help": "Enable or disable debug mode to display additional logs and diagnostic information."
+        "config": {
+            "action": "store_true",
+            "help": "Enable or disable debug mode to display additional logs and diagnostic information."
+        }
     },
     "e": {
         "mode": "train",
         "type": "int",
         "long": "epochs",
-        "default": 100,
-        "help": "Total number of complete training passes through the entire dataset."
+        "config": {
+            "default": 100,
+            "help": "Total number of complete training passes through the entire dataset."
+        }
     },
     "m": {
         "mode": "train|predict",
         "type": "str",
         "long": "model",
-        "default": "weights/hfinder-yolov8n-seg.pt",
-        "help": "Path to the YOLO model file to be used as the starting point for training (pretrained weights or a custom checkpoint)."
+        "config": {
+            "default": "weights/hfinder-yolov8n-seg.pt",
+            "help": "Path to the YOLO model file to be used as the starting point for training (pretrained weights or a custom checkpoint)."
+        }
     },
     "min": {
         "mode": "preprocess|train",
         "type": "int",
         "long": "min_area_px",
-        "default": 20,
-        "help": "Remove contours smaller than this area (pixels²); raise it to suppress speckles and debris."
+        "config": {
+            "default": 20,
+            "help": "Remove contours smaller than this area (pixels²); raise it to suppress speckles and debris."
+        }
     },
     "p": {
         "mode": "predict",
         "type": "str",
         "long": "power",
-        "default": "4",
-        "help": "Function used to calculate weighted confidence scores. Can be a positive integer or 'log'"
+        "config": {
+            "default": "4",
+            "help": "Function used to calculate weighted confidence scores. Can be a positive integer or 'log'"
+        }
     },
     "pub" : {
         "mode": "preprocess|train",
         "long": "publication",
-        "help": "Print contours as in publication style."
+        "config": {
+            "help": "Print contours as in publication style."
+        }
     },
     "s" : {
         "mode": "train|predict",
         "type": "int",
         "long": "size",
-        "default": 640,
-        "help": "Target size (in pixels) for training images."
+        "config": {
+            "default": 640,
+            "help": "Target size (in pixels) for training images."
+        }
     },
     "t": {
         "mode": "*",
         "type": "str",
         "long": "tiff_dir",
-        "default": "data",
-        "help": "Path to the folder containing the training image files or the images to predict"
+        "config": {
+            "default": "data",
+            "help": "Path to the folder containing the training image files or the images to predict"
+        }
     },
     "th": {
         "mode": "preprocess|train",
         "type": "str",
         "long": "auto_threshold",
-        "default": "auto",
-        "help": "Thresholding strategy: {auto, otsu, isodata, yen, li, triangle} or numeric (percentile <1, absolute ≥1). ‘auto’ selects Otsu or Triangle based on skewness."
+        "config": {
+            "default": "auto",
+            "help": "Thresholding strategy: {auto, otsu, isodata, yen, li, triangle} or numeric (percentile <1, absolute ≥1). ‘auto’ selects Otsu or Triangle based on skewness."
+        }
     },
     "v": {
         "mode": "train",
         "type": "float",
         "long": "validation_frac",
-        "default": 0.2,
-        "help": "Fraction of the dataset to reserve for validation during training (value between 0 and 1)."
+        "config": {
+            "default": 0.2,
+            "help": "Fraction of the dataset to reserve for validation during training (value between 0 and 1)."
+        }
     },
     "w": {
         "mode": "predict",
         "type": "str",
         "long": "overlay_whitelist",
-        "default": "[]",
-        "help": "JSON list of class-name pairs allowed to overlap, e.g. [[\"haustorium\",\"hypha\"]]."
+        "config": {
+            "default": "[]",
+            "help": "JSON list of class-name pairs allowed to overlap, e.g. [[\"haustorium\",\"hypha\"]]."
+        }
     },
     "y": {
         "mode": "predict",
         "type": "str",
         "long": "yaml",
-        "default": "weights/hfinder-yolov8n-seg.yaml",
-        "help": "Path to the YAML file used to resolve class names."
+        "config": {
+            "default": "weights/hfinder-yolov8n-seg.yaml",
+            "help": "Path to the YAML file used to resolve class names."
+        }
     }
 }
