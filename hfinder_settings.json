@@ -1,67 +1,4 @@
 {
-    "t": {
-        "mode": "*",
-        "type": "str",
-        "long": "tiff_dir",
-        "default": "data",
-        "help": "Path to the folder containing the training image files or the images to predict"
-    },
-    "th": {
-        "mode": "preprocess|train",
-        "type": "str",
-        "long": "auto_threshold",
-        "default": "auto",
-        "help": "Thresholding strategy: {auto, otsu, isodata, yen, li, triangle} or numeric (percentile <1, absolute ≥1). ‘auto’ selects Otsu or Triangle based on skewness."
-    },
-    "min": {
-        "mode": "preprocess|train",
-        "type": "int",
-        "long": "min_area_px",
-        "default": 20,
-        "help": "Remove contours smaller than this area (pixels²); raise it to suppress speckles and debris."
-    },
-    "de": {
-        "mode": "predict",
-        "type": "str",
-        "long": "device",
-        "default": "cpu",
-        "help": "Computation device for PyTorch (e.g. 'cpu', '0' for GPU)."
-    },
-    "ci": {
-        "mode": "predict",
-        "type": "float",
-        "long": "cross_iou",
-        "default": 0.5,
-        "help": "IoU threshold for cross-class suppression."
-    },
-    "op": {
-        "mode": "predict",
-        "type": "str",
-        "long": "overlay_policy",
-        "default": "keep_best",
-        "help": "Policy for cross-class overlaps: keep_best | drop_both | allow_if_whitelisted"
-    },
-    "ow": {
-        "mode": "predict",
-        "type": "str",
-        "long": "overlay_whitelist",
-        "default": "[]",
-        "help": "JSON list of class-name pairs allowed to overlap, e.g. [[\"haustoria\",\"hyphae\"]]."
-    },
-    "vi": {
-        "mode": "predict",
-        "type": "float",
-        "long": "vote_iou",
-        "default": 0.5,
-        "help": "IoU threshold for intra-class voting/clustering."
-    },
-    "vm": {
-        "mode": "predict",
-        "type": "int",
-        "long": "vote_min",
-        "default": 2,
-        "help": "Minimum number of votes required to keep a consolidated detection."
-    },
     "b": {
         "mode": "predict",
         "type": "int",
@@ -76,26 +13,45 @@
         "default": 0.25,
         "help": "Minimum confidence threshold for detections. Objects detected with confidence below this threshold will be disregarded."
     },
-    "y": {
+    "d": {
         "mode": "predict",
         "type": "str",
-        "long": "yaml",
-        "default": "weights/hfinder-yolov8n-seg.yaml",
-        "help": "Path to the YAML file used to resolve class names."
+        "long": "device",
+        "default": "cpu",
+        "help": "Computation device for PyTorch (e.g. 'cpu', '0' for GPU)."
     },
-    "dist" : {
+    "dbg": {
+        "mode": "*",
+        "long": "debug",
+        "help": "Enable or disable debug mode to display additional logs and diagnostic information."
+    },
+    "e": {
+        "mode": "train",
+        "type": "int",
+        "long": "epochs",
+        "default": 100,
+        "help": "Total number of complete training passes through the entire dataset."
+    },
+    "m": {
+        "mode": "train|predict",
+        "type": "str",
+        "long": "model",
+        "default": "weights/hfinder-yolov8n-seg.pt",
+        "help": "Path to the YOLO model file to be used as the starting point for training (pretrained weights or a custom checkpoint)."
+    },
+    "min": {
         "mode": "preprocess|train",
         "type": "int",
-        "long": "min_distance",
-        "default": 2,
-        "help": "Minimum Euclidean spacing between seed peaks (in pixels) before watershed; peaks closer than this are merged. Lower values split touching objects more; higher values yield fewer splits."
+        "long": "min_area_px",
+        "default": 20,
+        "help": "Remove contours smaller than this area (pixels²); raise it to suppress speckles and debris."
     },
-    "ws" : {
-        "mode": "preprocess|train",
-        "type": "bool",
-        "long": "watershed",
-        "default": 0,
-        "help": "Enable watershed splitting of touching objects after binarization; helps separate merged instances."
+    "p": {
+        "mode": "predict",
+        "type": "str",
+        "long": "power",
+        "default": "4",
+        "help": "Function used to calculate weighted confidence scores. Can be a positive integer or 'log'"
     },
     "pub" : {
         "mode": "preprocess|train",
@@ -109,31 +65,19 @@
         "default": 640,
         "help": "Target size (in pixels) for training images."
     },
-    "w" : {
-        "mode": "predict",
-        "type": "str",
-        "long": "weights",
-        "default": "weights/hfinder-yolov8n-seg.pt",
-        "help": "Weights for prediction."
-    },
-    "e": {
-        "mode": "train",
-        "type": "int",
-        "long": "epochs",
-        "default": 100,
-        "help": "Total number of complete training passes through the entire dataset."
-    },
-    "m": {
-        "mode": "train",
-        "type": "str",
-        "long": "model",
-        "default": "yolov8n-seg.pt",
-        "help": "Path to the YOLO model file to be used as the starting point for training (pretrained weights or a custom checkpoint)."
-    },
-    "dbg": {
+    "t": {
         "mode": "*",
-        "long": "debug",
-        "help": "Enable or disable debug mode to display additional logs and diagnostic information."
+        "type": "str",
+        "long": "tiff_dir",
+        "default": "data",
+        "help": "Path to the folder containing the training image files or the images to predict"
+    },
+    "th": {
+        "mode": "preprocess|train",
+        "type": "str",
+        "long": "auto_threshold",
+        "default": "auto",
+        "help": "Thresholding strategy: {auto, otsu, isodata, yen, li, triangle} or numeric (percentile <1, absolute ≥1). ‘auto’ selects Otsu or Triangle based on skewness."
     },
     "v": {
         "mode": "train",
@@ -142,11 +86,18 @@
         "default": 0.2,
         "help": "Fraction of the dataset to reserve for validation during training (value between 0 and 1)."
     },
-    "p": {
+    "w": {
         "mode": "predict",
         "type": "str",
-        "long": "power",
-        "default": "4",
-        "help": "Function used to calculate weighted confidence scores. Can be a positive integer or 'log'"
+        "long": "overlay_whitelist",
+        "default": "[]",
+        "help": "JSON list of class-name pairs allowed to overlap, e.g. [[\"haustorium\",\"hypha\"]]."
+    },
+    "y": {
+        "mode": "predict",
+        "type": "str",
+        "long": "yaml",
+        "default": "weights/hfinder-yolov8n-seg.yaml",
+        "help": "Path to the YAML file used to resolve class names."
     }
 }
