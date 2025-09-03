@@ -18,7 +18,6 @@ Public API
 - fill_gaps(binary, area_threshold=50, radius=1, connectivity=2): Fill holes + optional closing.
 - remove_noise(binary, min_size=20, connectivity=2): Remove small components.
 - noise_and_gaps(img): remove_noise ∘ fill_gaps, returns uint8 mask.
-- split_touching_watershed(binary): Watershed instance splitting → contours.
 - filter_contours_min_area(contours): Keep contours above min area.
 - simplify_contours(contours, epsilon=0.5): RDP polygon simplification.
 - auto_threshold_strategy(img, threshold): Apply named threshold + cleanup.
@@ -36,7 +35,7 @@ Notes
 Rationale
 ---------
 - Keep annotation steps deterministic and dataset-portable.
-- Prefer simple, robust morphology + optional watershed for hard merges.
+- Prefer simple, robust morphology
 """
 
 import os
@@ -285,46 +284,6 @@ def noise_and_gaps(img):
 
 
 
-def split_touching_watershed(binary):
-    """
-    Split merged foreground regions using distance transform + watershed,
-    then return one contour per resulting instance.
-
-    Pipeline:
-        1) Euclidean distance transform (EDT) on the binary mask.
-        2) Seed extraction from local maxima (enforcing ``min_distance`` between peaks).
-        3) Watershed on the negative distance restricted to the foreground.
-        4) For each label, extract a single external OpenCV contour.
-
-    :param binary: Binary mask (nonzero = foreground). Boolean is recommended.
-    :type binary: np.ndarray
-    :returns: List of OpenCV contours, each as an ``(N, 1, 2)`` integer array.
-    :rtype: list[np.ndarray]
-    :notes: Uses a peak detector on the distance map (``peak_local_max``) to
-            control seed separation via ``min_distance``.
-    """
-    binary = to_bool(binary)
-    dist = scipy.ndimage.distance_transform_edt(binary)
-    min_distance = HFinder_settings.get("min_distance")
-    coords = peak_local_max(dist, min_distance=min_distance,
-                            labels=binary.astype(bool), exclude_border=False)
-    peaks = np.zeros_like(dist, dtype=bool)
-    if coords.size:
-        peaks[tuple(coords.T)] = True
-    markers = scipy.ndimage.label(peaks)[0]
-    labels = skimage.segmentation.watershed(-dist, markers, mask=binary)
-    labels = np.asarray(labels)
-    
-    # Extract an external contour for each instance
-    contours = []
-    for lab in range(1, int(labels.max()) + 1):
-        m = (labels == lab).astype(np.uint8) * 255
-        cs, _ = cv2.findContours(m, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-        contours.extend(cs)
-    return contours
-
-
-
 def filter_contours_min_area(contours):
     """
     Keep only contours whose area is at least the configured minimum.
@@ -455,12 +414,7 @@ def channel_custom_threshold(channel, threshold):
         _, binary = cv2.threshold(channel, thresh_val, 255, cv2.THRESH_BINARY)
         binary = noise_and_gaps(binary)
 
-    # Optionally split touching instances with watershed (off by default)
-    use_watershed = HFinder_settings.get("watershed")
-    if use_watershed:
-        contours = split_touching_watershed(binary)
-    else:
-        contours = mask_to_polygons(binary)
+    contours = mask_to_polygons(binary)
 
     # Filter out small contours
     contours = filter_contours_min_area(contours)

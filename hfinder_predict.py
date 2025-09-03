@@ -371,11 +371,9 @@ def run():
     model = YOLO(weights)
 
     # Settings
-    conf = HFinder_settings.get("confidence") or 0.25
-    imgsz = HFinder_settings.get("size") or 640
-    batch = HFinder_settings.get("batch") or 8
-    #iou_vote = float(HFinder_settings.get("vote_iou") or 0.5)
-    #min_votes = int(HFinder_settings.get("vote_min") or 2)
+    conf = HFinder_settings.get("confidence")
+    imgsz = HFinder_settings.get("size")
+    batch = HFinder_settings.get("batch")
 
     # Retrieve class names from a YAML file (e.g., generated during training)
     yaml_path = HFinder_settings.get("yaml")
@@ -384,9 +382,6 @@ def run():
     class_ids = HFinder_utils.load_class_definitions_from_yaml(yaml_path)  # {"name": id}
     id_to_name = {v: k for k, v in class_ids.items()}
 
-    # Cross-class and inter-class settings
-    #cross_iou = float(HFinder_settings.get("cross_iou")) or 0.5
-    #overlay_policy = (HFinder_settings.get("overlay_policy") or "keep_best").lower()
     try:
         wl_raw = HFinder_settings.get("overlay_whitelist") or "[]"
         wl_pairs = json.loads(wl_raw)  # e.g. [["haustoria","hyphae"]]
