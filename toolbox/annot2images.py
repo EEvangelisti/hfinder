@@ -336,9 +336,9 @@ def extract_frame(tif, ch=0, z=0):
         Z, C, H, W = tif.shape
         if not (0 <= z < Z):
             raise ValueError(f"Z index {z} out of range [0, {Z-1}] for shape {tif.shape}.")
-        if not (0 <= ch < C):
+        if not (0 <= ch // Z < C): # FIXME: is is correct for Z stacks?
             raise ValueError(f"Channel index {ch} out of range [0, {C-1}] for shape {tif.shape}.")
-        return tif[z, ch, :, :]
+        return tif[z, ch // Z, :, :] # FIXME: is is correct for Z stacks?
 
     raise ValueError(
         f"Unsupported image shape {tif.shape}; expected (C,H,W) or (Z,C,H,W)."
