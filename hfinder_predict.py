@@ -121,7 +121,7 @@ def build_fusions_for_tiff(tif_path, out_dir, rng=None):
     base = os.path.splitext(os.path.basename(tif_path))[0]
 
     for i, channel in enumerate(all_channels):
-        if n > 1:
+        if n > 1 and False: ## TODO: Fix this code!
             ref_ch = min(combo)
             series_index = (ref_ch - 1) // c
             allowed_noise = [series_index * c + i + 1 for i in range(c)]
@@ -363,7 +363,7 @@ def run():
     :rtype: None
     """
     # Weights / model
-    weights = HFinder_settings.get("weights")
+    weights = HFinder_settings.get("model")
     if not weights:
         HFinder_log.fail("Weights needed to perform predictions")
     if not os.path.exists(weights):
