@@ -399,12 +399,12 @@ def main():
         for a in anns:
             cid = int(a["category_id"])
             # FIXME: HFinder should not save 'hf_channels' as a list
-            raw_ch = a.get("hf_channels", 0)
+            raw_ch = a.get("hf_channels", 1)
             if isinstance(raw_ch, list) and raw_ch:
                 ch = int(raw_ch[0])
             else:
                 ch = int(raw_ch)
-            by_cat_ch[cid, ch].append(a)
+            by_cat_ch[cid, ch-1].append(a)
 
         planes = {}
         for (cid, ch), cat_anns in sorted(by_cat_ch.items()):
