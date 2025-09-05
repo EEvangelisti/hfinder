@@ -29,6 +29,7 @@ filled polygons. Color is magenta by default or confidence-coded via a matplotli
 """
 
 import re
+import ast
 import json
 import argparse
 import numpy as np
@@ -41,7 +42,7 @@ from matplotlib.colors import Normalize
 from PIL import Image, ImageDraw, ImageFont, ImageOps
 
 
-CYAN = (0, 255, 255)
+DEFAULT_COLOR = (0, 255, 255)
 ALPHA30 = int(0.30 * 255)
 SETTINGS = None
 
@@ -85,7 +86,7 @@ ARGLIST = {
         "long": "--palette",
         "config": {
             "default": None,
-            "help": "Matplotlib colormap used to encode confidence values, e.g. viridis, plasma, cool, etc."
+            "help": "Matplotlib colormap used to encode confidence values (e.g. viridis, plasma, cool) or #RRGGBB value"
         }
     },
     "-ttf": {
@@ -215,6 +216,31 @@ def normalize_to_uint8(arr):
 
 
 
+import math
+from PIL import Image, ImageDraw, ImageFont
+
+ALPHA30 = 77  # ≈30% d'opacité
+
+def _split_poly_by_jumps(seg, max_jump=10.0):
+    """Découpe un seg (liste [x0,y0,x1,y1,...]) en sous-polygones
+    en cassant aux sauts > max_jump pixels."""
+    pts = [(seg[i], seg[i+1]) for i in range(0, len(seg), 2)]
+    if len(pts) < 3:
+        return []
+    polys, cur = [], [pts[0]]
+    for a, b in zip(pts, pts[1:]):
+        (x0, y0), (x1, y1) = a, b
+        if math.hypot(x1 - x0, y1 - y0) > max_jump and len(cur) >= 3:
+            polys.append(cur)
+            cur = [b]
+        else:
+            cur.append(b)
+    if len(cur) >= 3:
+        polys.append(cur)
+    return polys
+
+
+
 def draw_annotation(img, bbox_xyxy, segs, label, color, stroke):
     """
     Draw a bounding box, optional filled polygons (30% alpha), and a label on an image.
@@ -266,16 +292,30 @@ def draw_annotation(img, bbox_xyxy, segs, label, color, stroke):
         draw.rectangle([tx, ty, tx + tw + 6, ty + th], fill=(0, 0, 0))
         draw.text((tx + 2, ty + 2), label, fill=color, font=font)
 
+    # --- Polygones (sans traits parasites) ---
     if segs:
         overlay = Image.new("RGBA", (W, H), (0, 0, 0, 0))
         odraw = ImageDraw.Draw(overlay, "RGBA")
+
         for seg in segs:
-            if isinstance(seg, list):
-                pts = [(seg[i], seg[i+1]) for i in range(0, len(seg), 2)]
+            if not isinstance(seg, list) or len(seg) < 6:
+                continue  # pas assez de points
+            # points (x,y) clampés dans l’image
+            pts = [(max(0, min(W - 1, seg[i])),
+                    max(0, min(H - 1, seg[i+1])))
+                   for i in range(0, len(seg), 2)]
+            # Remplissage + contour en une seule primitive : pas de "line" manuelle
+            try:
+                odraw.polygon(pts,
+                              fill=color + (ALPHA30,),
+                              outline=color + (255,),
+                              width=stroke)
+            except TypeError:
+                # Pillow ancien sans 'width' : on trace d'abord le remplissage,
+                # puis un contour fin via polygon(outline=...) sans 'width'
                 odraw.polygon(pts, fill=color + (ALPHA30,))
-                # Close the outline by going back to the first point.
-                pts.append((seg[0], seg[1]))
-                odraw.line(pts, fill=color + (255,), width=stroke)
+                odraw.polygon(pts, outline=color + (255,))
+
         img = Image.alpha_composite(img.convert("RGBA"), overlay).convert("RGB")
 
     return img
@@ -346,6 +386,84 @@ def extract_frame(tif, ch=0, z=0):
 
 
 
+def hex_to_rgb(s):
+    s = s.lstrip("#")
+    return tuple(int(s[i:i+2], 16) for i in (0, 2, 4))
+
+
+
+def to_uint8_rgb(c):
+    if isinstance(c, str):
+        if c.startswith("#"):
+            return hex_to_rgb(c)
+        r, g, b = to_rgb(c)  # matplotlib gère noms de couleurs
+        return (int(r*255), int(g*255), int(b*255))
+    if isinstance(c, (tuple, list)) and len(c) == 3:
+        if max(c) > 1.0:
+            return tuple(int(v) for v in c)
+        return tuple(int(v*255) for v in c)
+    raise ValueError(f"Unsupported color format: {c}")
+
+
+
+def parse_palette_arg(arg):
+    """Try to interpret a palette argument string as dict, hex color, or name."""
+    # Tenter un dict
+    if arg.strip().startswith("{"):
+        try:
+            return ast.literal_eval(arg)
+        except Exception:
+            raise ValueError(f"Invalid dict for palette: {arg}")
+    return arg  # sinon, c'est un str (hex ou cmap)
+
+
+
+def resolve_palette(palette):
+    """
+    Resolve palette specification into one of three cases:
+      - dict {class -> (r,g,b)} if palette is a dict
+      - (r,g,b) uint8 tuple if palette is a single color
+      - (cmap, norm) if palette is a colormap name
+
+    :param palette: Palette specification
+    :type palette: dict[str,str|tuple] | str | None
+    :param default_color: Fallback color if resolution fails
+    :type default_color: str
+    :rtype: dict | tuple[int,int,int] | (Colormap, Normalize)
+    """
+
+    if palette is None:
+        return DEFAULT_COLOR
+
+    palette = parse_palette_arg(palette)
+
+    if isinstance(palette, dict):
+        out = {}
+        for cls, col in palette.items():
+            try:
+                out[cls] = to_uint8_rgb(col)
+            except Exception:
+                out[cls] = DEFAULT_COLOR
+        return out
+
+    if isinstance(palette, str) and palette.startswith("#"):
+        try:
+            return to_uint8_rgb(palette)
+        except Exception:
+            return DEFAULT
+
+    if isinstance(palette, str):
+        try:
+            cmap = matplotlib.colormaps.get_cmap(palette)
+            norm = Normalize(vmin=0.0, vmax=1.0)
+            return (cmap, norm)
+        except Exception:
+            return DEFAULT_COLOR
+
+    return DEFAULT_COLOR
+
+
+
 def main():
     """
     Entry point: iterate over TIFFs and render one PNG per (category, channel).
@@ -365,15 +483,8 @@ def main():
     print("HFinder auxiliary script json2image.py")
     parse_arguments()
 
-    Path(SETTINGS.out_dir).mkdir(parents=True, exist_ok=True)
-    
-    cmap = None
-    if SETTINGS.palette is not None:
-        try:
-            cmap = matplotlib.colormaps.get_cmap(SETTINGS.palette)
-            norm = Normalize(vmin=0.0, vmax=1.0)
-        except Exception:
-            print(f"⚠️ Unknown palette '{SETTINGS.palette}', falling back to cyan.")
+    Path(SETTINGS.out_dir).mkdir(parents=True, exist_ok=True)   
+    MASK_COLOR = resolve_palette(SETTINGS.palette)
 
     tiff_paths = sorted(
         chain(
@@ -425,12 +536,20 @@ def main():
                     label = f"{cls_name.title()} ({conf:.2f})"
                 else:
                     label = f"{cls_name[:2].title()}. ({conf:.2f})"
+                
+                if isinstance(MASK_COLOR, tuple):
+                    (cmap, norm) = MASK_COLOR
+                    color = tuple(int(255*v) for v in cmap(norm(conf))[:3])
+                elif isinstance(MASK_COLOR, dict):
+                    color = MASK_COLOR[cls_name] if cls_name in MASK_COLOR else DEFAULT_COLOR
+                else:
+                    color = MASK_COLOR
                 canvas = draw_annotation(
                     canvas,
                     bbox_xyxy=[x, y, x + w, y + h],
                     segs=[seg for seg in a.get("segmentation", []) if isinstance(seg, list)],
                     label=label,
-                    color=CYAN if cmap is None else tuple(int(255*v) for v in cmap(norm(conf))[:3]),
+                    color=color,
                     stroke=stroke
                 )
 

@@ -421,6 +421,7 @@ def run():
             source=fusion_paths,
             batch=batch,
             save=True,            # saves overlays into runs/predict/<tif_base>/
+            iou=0.5,
             project=project,
             name=os.path.join("predict", tif_base),
             conf=conf,
