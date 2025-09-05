@@ -362,13 +362,13 @@ def run():
 
     :rtype: None
     """
-    # Weights / model
-    weights = HFinder_settings.get("model")
-    if not weights:
-        HFinder_log.fail("Weights needed to perform predictions")
-    if not os.path.exists(weights):
-        HFinder_log.fail(f"Weights file not found: {weights}")
-    model = YOLO(weights)
+    # Model
+    model = HFinder_settings.get("model")
+    if not model:
+        HFinder_log.fail("Model needed to perform predictions")
+    if not os.path.exists(model):
+        HFinder_log.fail(f"Model file not found: {model}")
+    model = YOLO(model)
 
     # Settings
     conf = HFinder_settings.get("confidence")

@@ -22,7 +22,7 @@
         "type": "str",
         "long": "device",
         "config": {
-            "default": "cpu",
+            "default": "0",
             "help": "Computation device for PyTorch (e.g. 'cpu', '0' for GPU)."
         }
     },
