@@ -25,6 +25,7 @@ Notes
 
 import cv2
 import numpy as np
+from PIL import Image
 from matplotlib.colors import hsv_to_rgb
 import hfinder_log as HFinder_log
 import hfinder_palette as HFinder_palette
@@ -109,6 +110,32 @@ def resize_multichannel_image(img):
 
     # Return channels as a 1-based index dict for external consistency.
     return {i + 1: resized[i] for i in range(n * c)}, ratio, (n, c)
+
+
+
+def save_gray_as_rgb(channel, out_path, normalize=True):
+    """
+    Save a single-channel image as an RGB grayscale JPEG.
+
+    This function takes a 2D array representing a single grayscale channel,
+    optionally normalizes it to the [0, 1] range, replicates the values across
+    three channels (R, G, B), converts the result to 8-bit unsigned integers,
+    and saves it as a JPEG image.
+
+    :param channel: 2D array of grayscale intensities (e.g. a channel from a multi-channel TIFF).
+    :type channel: numpy.ndarray
+    :param out_path: Destination path for the saved image.
+    :type out_path: str
+    :param normalize: Whether to normalize values to the [0, 1] range before conversion.
+    :type normalize: bool, optional
+    :rtype: None
+    """
+    gray = channel.astype(np.float32)
+    if normalize:
+        gray = (gray - gray.min()) / (gray.max() - gray.min())
+    rgb_uint8 = (np.stack([gray, gray, gray], axis=-1) * 255).astype(np.uint8)
+    Image.fromarray(rgb_uint8).save(out_path, "JPEG")
+
 
 
 def colorize_with_hue(frame, hue):

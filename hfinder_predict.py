@@ -30,7 +30,6 @@ import torch
 import random
 import tifffile
 import numpy as np
-from PIL import Image
 from glob import glob
 from collections import defaultdict, Counter
 from ultralytics import YOLO
@@ -101,7 +100,7 @@ def build_fusions_for_tiff(tif_path, out_dir, rng=None):
 
     :param tif_path: Path to input TIFF.
     :type tif_path: str
-    :param out_dir: Directory where fusions are saved.
+    :param out_dir: Directory where frames are saved.
     :type out_dir: str
     :param rng: Optional random generator for reproducibility.
     :type rng: random.Random | None
@@ -112,42 +111,30 @@ def build_fusions_for_tiff(tif_path, out_dir, rng=None):
         rng = random.Random(0)
 
     img = tifffile.imread(tif_path)
-    channels_dict, ratio, (n, c) = HFinder_ImageOps.resize_multichannel_image(img)  # {1..n*c: (H,W)}
+    channels_dict, ratio, (n, c) = HFinder_ImageOps.resize_multichannel_image(img)
     all_channels = sorted(channels_dict.keys())
 
     os.makedirs(out_dir, exist_ok=True)
 
-    fusions = []
+    frames = []
     base = os.path.splitext(os.path.basename(tif_path))[0]
 
-    for i, channel in enumerate(all_channels):
-        if n > 1 and False: ## TODO: Fix this code!
-            ref_ch = min(combo)
-            series_index = (ref_ch - 1) // c
-            allowed_noise = [series_index * c + i + 1 for i in range(c)]
-            noise_candidates = sorted(list(set(noise_candidates) & set(allowed_noise)))
+    for i in all_channels:
+        if n > 1 and False:
+            # TODO: Here we should first generate the MIP image to perform 
+            # predictions, then attribute channels, and later proceed to 
+            # individual channels.
+            pass
 
-        fname = f"{base}_{i}.jpg"
-        palette = HFinder_palette.get_random_palette(hash_data=fname)
-
-        rgb = HFinder_ImageOps.compose_hue_fusion(
-            channels=channels_dict,
-            selected_channels=[all_channels[i]],
-            palette=palette,
-            noise_channels=None
-        )
-
-        out_path = os.path.join(out_dir, fname)
-        Image.fromarray(rgb).save(out_path, "JPEG")
-        fusions.append({
+        out_path = os.path.join(out_dir, f"{base}_{i}.jpg")
+        HFinder_ImageOps.save_gray_as_rgb(channels_dict[i], out_path)
+        frames.append({
             "path": out_path,
             "channel": i,
-            "palette": palette
         })
 
-    # Dimensions (H,W)
     H, W = next(iter(channels_dict.values())).shape
-    return ratio, fusions, (H, W), (n, c)
+    return ratio, frames, (H, W), (n, c)
 
 
 
@@ -418,18 +405,18 @@ def run():
 
         # 1) Generate fused RGB images (same logic as training)
         rng = random.Random(tif_base)  # deterministic per TIFF
-        ratio, fusions, (H, W), (n, c) = build_fusions_for_tiff(tif_path, out_dir, rng=rng)
+        ratio, frames, (H, W), (n, c) = build_fusions_for_tiff(tif_path, out_dir, rng=rng)
         orig_W = int(round(W / ratio))
         orig_H = int(round(H / ratio))
         scale_factor = 1.0 / ratio
-        fusion_paths = [f["path"] for f in fusions]
-        fusion_meta = {f["path"]: f for f in fusions}
+        fusion_paths = [f["path"] for f in frames]
+        fusion_meta = {f["path"]: f for f in frames}
         if not fusion_paths:
             HFinder_log.warn(f"Skipping file '{tif_file}'")
             continue
         HFinder_log.info(f"Processing '{tif_file}'")
 
-        # 2) Run predictions on all fusions
+        # 2) Run predictions on all frames
         results = model.predict(
             source=fusion_paths,
             batch=batch,
@@ -483,8 +470,9 @@ def run():
                 all_dets.append(det)
 
         # Generating detection subsets for each channel
+        # FIXME: not robust if we also include MIP images
         subsets = []
-        for ch in range(len(fusions)):
+        for ch in range(len(frames)):
             det_subset = [det for det in all_dets if det["channel"] == ch]
             if not det_subset:
                 continue
