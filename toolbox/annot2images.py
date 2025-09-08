@@ -23,7 +23,7 @@ filled polygons. Color is magenta by default or confidence-coded via a matplotli
         --tiff_dir /path/to/tiffs \
         --annotations /path/to/jsons \
         --out_dir /path/to/out \
-        [--palette viridis] [--no_labels] [--no_bounding_boxes] \
+        [--palette viridis] [--labels] [--boxes] \
         [--font_file DejaVuSans.ttf] [--font_size 18]
 
 """
@@ -47,13 +47,6 @@ ALPHA30 = int(0.30 * 255)
 SETTINGS = None
 
 ARGLIST = {
-    "-t": {
-        "long": "--tiff_dir",
-        "config": {
-            "default": ".",
-            "help": "Folder containing TIFF files"
-        }
-    },
     "-a": {
         "long": "--annotations",
         "config": {
@@ -61,25 +54,74 @@ ARGLIST = {
             "help": "Folder containing COCO JSON files"
         }
     },
+    "-box": {
+        "long": "--boxes",
+        "config": {
+            "action": "store_true",
+            "help": "Display bounding boxes around polygons"
+        }
+    },
+    "-cat": {
+        "long": "--category",
+        "config": {
+            "default": "*",
+            "help": "Process the given category only"
+        }
+    },
+    "-cmp": {
+        "long": "--composite",
+        "config": {
+            "action": "store_true",
+            "help": "Générer une image composite unique avec tous les polygones"
+        }
+    },
+    "-cmpbg": {
+        "long": "--composite_bg",
+        "config": {
+            "default": "black",
+            "help": "Fond de l'image composite: 'black', 'avg' (moyenne des canaux) ou 'max' (maximum par pixel)"
+        }
+    },
+    "-cmplab": {
+        "long": "--composite_labels",
+        "config": {
+            "action": "store_true",
+            "help": "Afficher les labels sur l'image composite (par défaut: masqués)"
+        }
+    },
+    "-cmpbox": {
+        "long": "--composite_boxes",
+        "config": {
+            "action": "store_true",
+            "help": "Afficher les boîtes englobantes sur l'image composite (par défaut: masquées)"
+        }
+    },
+    "-t": {
+        "long": "--tiff_dir",
+        "config": {
+            "default": ".",
+            "help": "Folder containing TIFF files"
+        }
+    },
+    "-lab": {
+        "long": "--labels",
+        "config": {
+            "action": "store_true",
+            "help": "Display labels and confidence values"
+        }
+    },
+    "-long": {
+        "long": "--long_labels",
+        "config": {
+            "action": "store_true",
+            "help": "Do not abbreviate label names"
+        }
+    },
     "-o": {
         "long": "--out_dir",
         "config": {
             "default": ".",
             "help": "Output directory for PNG files"
-        }
-    },
-    "-lab": {
-        "long": "--no_labels",
-        "config": {
-            "action": "store_true",
-            "help": "Do not display labels and confidence values - useful on crowded images"
-        }
-    },
-    "-box": {
-        "long": "--no_bounding_boxes",
-        "config": {
-            "action": "store_true",
-            "help": "Do not display bounding boxes around polygons"
         }
     },
     "-pal": {
@@ -102,21 +144,7 @@ ARGLIST = {
             "default": "proportional",
             "help": "Font size for labels and confidence values"
         }
-    },
-    "-long": {
-        "long": "--long_labels",
-        "config": {
-            "action": "store_true",
-            "help": "Do not abbreviate label names"
-        }
-    },
-    "-cat": {
-        "long": "--category",
-        "config": {
-            "default": "*",
-            "help": "Process the given category only"
-        }
-    },
+    }
 }
 
 
@@ -241,18 +269,18 @@ def _split_poly_by_jumps(seg, max_jump=10.0):
 
 
 
-def draw_annotation(img, bbox_xyxy, segs, label, color, stroke):
+def draw_annotation(img, bbox_xyxy, segs, label, color, stroke, composite_mode=False):
     """
     Draw a bounding box, optional filled polygons (30% alpha), and a label on an image.
 
-    - Bounding box is skipped when ``SETTINGS.no_bounding_boxes`` is True.
+    - Bounding box is skipped if ``SETTINGS.boxes`` is False.
     - Label is drawn on a black rectangle that clamps to image bounds.
     - Polygons are composited on an RGBA overlay to preserve alpha.
 
     :param img: PIL image (RGB).
     :type img: PIL.Image.Image
-    :param bbox_xyxy: Bounding box as ``[x1, y1, x2, y2]``.
-    :type bbox_xyxy: list | tuple
+    :param bbox_xyxy: Bounding box as ``[x1, y1, x2, y2]``, or None.
+    :type bbox_xyxy: list | tuple | None
     :param segs: COCO polygon segmentations (list of flat ``[x0, y0, x1, y1, ...]`` lists).
     :type segs: list
     :param label: Text label (e.g., ``"Cl. (0.92)"``) or ``None`` to skip.
@@ -267,9 +295,10 @@ def draw_annotation(img, bbox_xyxy, segs, label, color, stroke):
     W, H = img.size
     draw = ImageDraw.Draw(img)
     
-    x1, y1, x2, y2 = clamp_box_xyxy(bbox_xyxy, W, H)
-    if not SETTINGS.no_bounding_boxes:
-        draw.rectangle([x1, y1, x2, y2], outline=color, width=stroke)
+    if bbox_xyxy is not None:
+        x1, y1, x2, y2 = clamp_box_xyxy(bbox_xyxy, W, H)
+        if (composite_mode and SETTINGS.composite_boxes) or SETTINGS.boxes:
+            draw.rectangle([x1, y1, x2, y2], outline=color, width=stroke)
 
     if label is not None:
         try:
@@ -463,6 +492,121 @@ def resolve_palette(palette):
     return DEFAULT_COLOR
 
 
+def _used_channel_from_ann(a):
+    """Récupère l'index de canal (1-based) tel que stocké par HFinder."""
+    ch = int(a.get("hf_channel", 1))
+    return max(0, ch - 1)
+
+
+
+def build_background_image(tif, used_channels, mode="black"):
+    """
+    Construit le fond pour la composite:
+      - 'black' → fond noir.
+      - 'avg'   → moyenne (grayscale) des canaux utilisés.
+      - 'max'   → maximum (grayscale) des canaux utilisés.
+    """
+    H, W = tif.shape[-2:]
+    if mode.lower() == "black" or not used_channels:
+        return Image.new("RGB", (W, H), (0, 0, 0))
+
+    # Empilement des frames normalisées (uint8)
+    frames = []
+    for ch in sorted(used_channels):
+        try:
+            frame = normalize_to_uint8(extract_frame(tif, ch=ch))
+            frames.append(frame.astype(np.float32))
+        except Exception:
+            continue
+
+    if not frames:
+        # Repli si rien n'est exploitable: premier canal
+        frame = normalize_to_uint8(extract_frame(tif, ch=0))
+        return ImageOps.grayscale(Image.fromarray(frame)).convert("RGB")
+
+    stack = np.stack(frames, axis=0)  # [C, H, W]
+
+    mode_l = mode.lower()
+    if mode_l == "max":
+        bg = np.max(stack, axis=0)
+    else:  # 'avg' par défaut
+        bg = np.mean(stack, axis=0)
+
+    bg8 = np.clip(bg, 0, 255).astype(np.uint8)
+    return ImageOps.grayscale(Image.fromarray(bg8)).convert("RGB")
+
+
+def generate_all_polygons_image(tif, anns, id_to_name, mask_color,
+                                background_mode="black",
+                                show_labels=False,
+                                show_boxes=False):
+    """
+    Génère une image unique contenant tous les polygones et, selon l'option,
+    un fond noir ou la moyenne en niveaux de gris des canaux utilisés.
+
+    :param tif: tableau TIFF (ndarray)
+    :param anns: liste d'annotations COCO fusionnées
+    :param id_to_name: dict {category_id -> name}
+    :param mask_color: tuple RGB, dict {class->RGB} ou (cmap, norm) (sortie de resolve_palette)
+    :param background_mode: 'black' ou 'avg'
+    :return: PIL.Image (RGB)
+    """
+    H, W = tif.shape[-2:]
+    used_channels = {_used_channel_from_ann(a) for a in anns}
+    canvas = build_background_image(tif, used_channels, mode=background_mode)
+
+    stroke = max(1, W // 500)
+
+    for a in anns:
+        # bbox
+        x, y, w, h = a.get("bbox", [0, 0, 0, 0])
+        if w <= 0 or h <= 0:
+            continue
+
+        # label (respecte vos options existantes)
+        cid = int(a["category_id"])
+        cls_name = id_to_name.get(cid, f"class_{cid}")
+        conf = float(a.get("confidence", 0.0))
+
+        # --- Labels : par défaut masqués ; affichés si --composite_labels
+        if show_labels:
+            if SETTINGS.long_labels:
+                label = f"{cls_name.title()} ({conf:.2f})"
+            else:
+                label = f"{cls_name[:2].title()}. ({conf:.2f})"
+        else:
+            label = None    
+
+        # couleur (mêmes règles que votre rendu par catégorie)
+        if isinstance(mask_color, tuple) and len(mask_color) == 2:
+            # (cmap, norm)
+            cmap, norm = mask_color
+            color = tuple(int(255 * v) for v in cmap(norm(conf))[:3])
+        elif isinstance(mask_color, dict):
+            color = mask_color.get(cls_name, DEFAULT_COLOR)
+        else:
+            # tuple RGB direct
+            color = mask_color
+
+        # segments
+        segs = [seg for seg in a.get("segmentation", []) if isinstance(seg, list)]
+
+        # --- Boîtes : passées uniquement si --composite_boxes
+        bbox_xyxy = [x, y, x + w, y + h] if show_boxes else None
+
+        # dessin (réutilise votre routine robuste)
+        canvas = draw_annotation(
+            canvas,
+            bbox_xyxy=bbox_xyxy,
+            segs=segs,
+            label=label,
+            color=color,
+            stroke=stroke,
+            composite_mode=True
+        )
+
+    return canvas
+
 
 def main():
     """
@@ -509,13 +653,8 @@ def main():
         by_cat_ch = defaultdict(list)
         for a in anns:
             cid = int(a["category_id"])
-            # FIXME: HFinder should not save 'hf_channels' as a list
-            raw_ch = a.get("hf_channels", 1)
-            if isinstance(raw_ch, list) and raw_ch:
-                ch = int(raw_ch[0])
-            else:
-                ch = int(raw_ch)
-            by_cat_ch[cid, ch-1].append(a)
+            ch = int(a.get("hf_channel", 1))
+            by_cat_ch[cid, ch - 1].append(a)
 
         planes = {}
         for (cid, ch), cat_anns in sorted(by_cat_ch.items()):
@@ -530,15 +669,16 @@ def main():
                 if w <= 0 or h <= 0:
                     continue
                 conf = float(a.get("confidence", 0.0))
-                if SETTINGS.no_labels:
-                    label = None
-                elif SETTINGS.long_labels:
-                    label = f"{cls_name.title()} ({conf:.2f})"
-                else:
-                    label = f"{cls_name[:2].title()}. ({conf:.2f})"
+
+                label = None
+                if SETTINGS.labels:
+                    if SETTINGS.long_labels:
+                        label = f"{cls_name.title()} ({conf:.2f})"
+                    else:
+                        label = f"{cls_name[:2].title()}. ({conf:.2f})"
                 
-                if isinstance(MASK_COLOR, tuple):
-                    (cmap, norm) = MASK_COLOR
+                if isinstance(MASK_COLOR, tuple) and len(MASK_COLOR) == 2:
+                    cmap, norm = MASK_COLOR
                     color = tuple(int(255*v) for v in cmap(norm(conf))[:3])
                 elif isinstance(MASK_COLOR, dict):
                     color = MASK_COLOR[cls_name] if cls_name in MASK_COLOR else DEFAULT_COLOR
@@ -557,6 +697,23 @@ def main():
             canvas.save(Path(SETTINGS.out_dir) / out_name)
             print(f"   ✅ Saving '{out_name}'")
 
+        # --- Image composite unique (optionnelle) ---
+        if SETTINGS.composite:
+            try:
+                composite = generate_all_polygons_image(
+                    tif=tif,
+                    anns=anns,
+                    id_to_name=id_to_name,
+                    mask_color=MASK_COLOR,
+                    background_mode=SETTINGS.composite_bg,
+                    show_labels=SETTINGS.composite_labels,
+                    show_boxes=SETTINGS.composite_boxes
+                )
+                out_name = f"{base}_ALL_{SETTINGS.composite_bg}.png"
+                composite.save(Path(SETTINGS.out_dir) / out_name)
+                print(f"   ✅ Saving composite '{out_name}'")
+            except Exception as e:
+                print(f"   ⚠️  Composite failed: {e}")
 
 
 if __name__ == "__main__":
