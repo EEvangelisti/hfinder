@@ -580,7 +580,7 @@ def run():
                     "segmentation": segmentation,
                     "iscrowd": 0,
                     "confidence": round(d["conf"], 4),
-                    "hf_channels": [ch]
+                    "hf_channel": ch
                 })
                 ann_id += 1
 
