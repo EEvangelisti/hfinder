@@ -28,8 +28,11 @@ filled polygons. Color is magenta by default or confidence-coded via a matplotli
 
 """
 
+import os
 import re
+import sys
 import ast
+import math
 import json
 import argparse
 import numpy as np
@@ -41,111 +44,14 @@ from collections import defaultdict
 from matplotlib.colors import Normalize
 from PIL import Image, ImageDraw, ImageFont, ImageOps
 
-
 DEFAULT_COLOR = (0, 255, 255)
 ALPHA30 = int(0.30 * 255)
 SETTINGS = None
 
-ARGLIST = {
-    "-a": {
-        "long": "--annotations",
-        "config": {
-            "default": ".",
-            "help": "Folder containing COCO JSON files"
-        }
-    },
-    "-box": {
-        "long": "--boxes",
-        "config": {
-            "action": "store_true",
-            "help": "Display bounding boxes around polygons"
-        }
-    },
-    "-cat": {
-        "long": "--category",
-        "config": {
-            "default": "*",
-            "help": "Process the given category only"
-        }
-    },
-    "-cmp": {
-        "long": "--composite",
-        "config": {
-            "action": "store_true",
-            "help": "Générer une image composite unique avec tous les polygones"
-        }
-    },
-    "-cmpbg": {
-        "long": "--composite_bg",
-        "config": {
-            "default": "black",
-            "help": "Fond de l'image composite: 'black', 'avg' (moyenne des canaux) ou 'max' (maximum par pixel)"
-        }
-    },
-    "-cmplab": {
-        "long": "--composite_labels",
-        "config": {
-            "action": "store_true",
-            "help": "Afficher les labels sur l'image composite (par défaut: masqués)"
-        }
-    },
-    "-cmpbox": {
-        "long": "--composite_boxes",
-        "config": {
-            "action": "store_true",
-            "help": "Afficher les boîtes englobantes sur l'image composite (par défaut: masquées)"
-        }
-    },
-    "-t": {
-        "long": "--tiff_dir",
-        "config": {
-            "default": ".",
-            "help": "Folder containing TIFF files"
-        }
-    },
-    "-lab": {
-        "long": "--labels",
-        "config": {
-            "action": "store_true",
-            "help": "Display labels and confidence values"
-        }
-    },
-    "-long": {
-        "long": "--long_labels",
-        "config": {
-            "action": "store_true",
-            "help": "Do not abbreviate label names"
-        }
-    },
-    "-o": {
-        "long": "--out_dir",
-        "config": {
-            "default": ".",
-            "help": "Output directory for PNG files"
-        }
-    },
-    "-pal": {
-        "long": "--palette",
-        "config": {
-            "default": None,
-            "help": "Matplotlib colormap used to encode confidence values (e.g. viridis, plasma, cool) or #RRGGBB value"
-        }
-    },
-    "-ttf": {
-        "long": "--font_file",
-        "config": {
-            "default": "DejaVuSans.ttf",
-            "help": "Font used to write labels and confidence values"
-        }
-    },
-    "-sz": {
-        "long": "--font_size",
-        "config": {
-            "default": "proportional",
-            "help": "Font size for labels and confidence values"
-        }
-    }
-}
+PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+arglist_file = os.path.join(PROJECT_ROOT, "toolbox", "annot2images_arglist.json")
+with open(arglist_file, "r") as f:
+    ARGLIST = json.load(f)
 
 
 def sanitize(name):
@@ -241,13 +147,7 @@ def normalize_to_uint8(arr):
     else:
         arr = np.zeros_like(arr, dtype=np.float32)
     return arr.astype(np.uint8)
-
-
-
-import math
-from PIL import Image, ImageDraw, ImageFont
-
-ALPHA30 = 77  # ≈30% d'opacité
+    
 
 def _split_poly_by_jumps(seg, max_jump=10.0):
     """Découpe un seg (liste [x0,y0,x1,y1,...]) en sous-polygones
@@ -460,9 +360,6 @@ def resolve_palette(palette):
     :type default_color: str
     :rtype: dict | tuple[int,int,int] | (Colormap, Normalize)
     """
-
-    if palette is None:
-        return DEFAULT_COLOR
 
     palette = parse_palette_arg(palette)
 
