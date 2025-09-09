@@ -30,17 +30,20 @@ match expected biological structures.
 
 |Command|Description|Default value|
 |-|-|-|
-|`-t <path>` or<br>`--tiff_dir <path>`|Folder containing TIFF files|Current directory|
 |`-a <path>` or<br>`--annotations <path>`|Folder containing COCO JSON annotations|Current directory|
-|`-o <path>` or<br>`--out_dir <path>`|Output directory for PNG files|Current directory|
-|`-lab` or<br>`--no_labels`|Do not display labels and confidence values|Inactive|
-|`-box` or<br>`--no_bounding_boxes`|Do not display bounding boxes around polygons|Inactive|
-|`-pal <name>` or<br>`--palette <name>`|Matplotlib colormap used to encode confidence values|#00FFFF|
-|`-ttf <name>` or<br>`--font_file <name>`|Font used to write labels and confidence values|arial.ttf|
-|`-sz <int>` or<br>`--font_size <int>`|Font size for labels and confidence values|Proportional|
+|`-b` or<br>`--boxes`|Display bounding boxes around polygons|Inactive|
+|`-c <name>` or<br>`--category <name>`|Process the given category only|Process all|
+|`-cmp` or<br>`--composite`|Generate a composite image featuring all polygons|Inactive|
+|`-cmpbg <value>` or<br>`--composite_bg <value>`|Background of the composite image: 'black', 'avg' (average of channels), or 'max' (per-pixel maximum)|black|
+|`-cmplab` or<br>`--composite_labels`|Display labels on the composite image|Inactive|
+|`-cmpbox` or<br>`--composite_boxes`|Display bounding boxes on the composite image|Inactive|
+|`-l` or<br>`--labels`|Display labels and confidence values|Inactive|
 |`-long` or<br>`--long_labels`|Do not abbreviate label names|Inactive|
-|`-cat <name>` or<br>`--category <name>`|Process the given category only|All categories|
-
+|`-o <path>` or<br>`--out_dir <path>`|Output directory for PNG files|Current directory|
+|`-p <value>` or<br>`--palette <value>`|Matplotlib colormap used to encode confidence values (e.g. viridis, plasma, cool), #RRGGBB value, or dictionary|#00FFFF|
+|`-t <path>` or<br>`--tiff_dir <path>`|Folder containing TIFF files|Current directory|
+|`-ttf <name>` or<br>`--font_file <name>`|Font used to write labels and confidence values|DejaVuSans.ttf|
+|`-sz <int>` or<br>`--font_size <int>`|Font size for labels and confidence values|Proportional|
 
 
 ## Signal Extraction - `annot2signal.py`
