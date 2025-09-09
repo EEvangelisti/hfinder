@@ -1,0 +1,11 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+SCRIPT="$(readlink -f "${BASH_SOURCE[0]}")"
+SCRIPT_DIR="$(dirname "$SCRIPT")"
+PROJECT_ROOT="$(dirname "$SCRIPT_DIR")"
+
+# shellcheck source=/dev/null
+source "$PROJECT_ROOT/hfinder-venv/bin/activate"
+python "$PROJECT_ROOT/sources/hfinder.py" "$@"
+deactivate || true
