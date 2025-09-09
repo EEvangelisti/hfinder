@@ -34,6 +34,8 @@ Notes
   allowing indirection in lookups (see `get()`).
 """
 
+import os
+import sys
 import ast
 import json
 import pydoc
@@ -43,10 +45,12 @@ import hfinder_log as HFinder_log
 # and an optional mode. Types are given as Python dotted strings (e.g. `"int"`, 
 # `"float"`, `"tuple"`, `"str"`), and converted automatically upon loading. 
 # Booleans must be given as strings `"true"` / `"false"`.
+PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 SETTINGS = {}
 
 # Load raw settings from JSON.
-with open("hfinder_settings.json", "r") as f:
+settings_file = os.path.join(PROJECT_ROOT, "sources", "hfinder_settings.json")
+with open(settings_file, "r") as f:
     SETTINGS = json.load(f)
 
 # Normalize entries: resolve types, register long-name indirections, and
