@@ -70,13 +70,13 @@ where action can be `preprocess`, `train`, or `predict`.
 
 ## Training Mode
 
-See [Training guide](README.train.md).
+See [Training guide](doc/training.md).
 
 ## Prediction Mode
 
-See [Prediction guide](README.predict.md).
+See [Prediction guide](doc/prediction.md).
 
 ## HFinder Toolbox
 
-For an introduction to HFinder auxiliary scripts, see [Toolbox guide](README.toolbox.md).
+For an introduction to HFinder auxiliary scripts, see [Toolbox guide](doc/toolbox.md).
 
