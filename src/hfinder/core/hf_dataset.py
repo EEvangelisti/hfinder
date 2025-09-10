@@ -48,9 +48,9 @@ from itertools import chain
 from collections import defaultdict
 from hfinder.core import hf_log as HF_log
 from hfinder.core import hf_utils as HF_utils
-from hfinder.session import folders as HF_folders
 from hfinder.core import hf_palette as HF_palette
 from hfinder.core import hf_imageinfo as HF_ImageInfo
+from hfinder.session import folders as HF_folders
 from hfinder.session import settings as HF_settings
 from hfinder.image import processing as HF_ImageOps
 from hfinder.core import hf_geometry as HF_geometry
@@ -570,7 +570,7 @@ def generate_training_dataset():
     image_paths = sorted(glob(os.path.join(data_dir, "*.tif")))
     
     class_ids = HF_settings.load_class_definitions()
-    HF_utils.write_yolo_yaml(class_ids)
+    HF_folders.write_yolo_yaml(class_ids)
     HF_ImageInfo.initialize()
 
     for img_path in image_paths:

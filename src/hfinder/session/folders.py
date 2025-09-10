@@ -47,6 +47,7 @@ Notes
 """
 
 import os
+import yaml
 from datetime import datetime
 from hfinder.core import hf_log as HF_log
 
@@ -301,5 +302,36 @@ def get_contours_dir(root=True):
     sanity_check()
     path = os.path.join("dataset", "contours")
     return rootify(path) if root else path
+
+
+
+def write_yolo_yaml(class_ids):
+    """
+    Generate and save a YOLO-compatible dataset YAML file.
+
+    The file `dataset.yaml` is written under the session dataset directory and
+    contains:
+      - `path`: absolute project root,
+      - `train`/`val`: absolute paths to image folders,
+      - `nc`: number of classes,
+      - `names`: class names ordered by class index.
+
+    :param class_ids: Mapping from class name to class index
+                      (e.g., {"cell": 0, "noise": 1}).
+    :type class_ids: dict[str, int]
+    :rtype: None
+    """
+    data = {
+        "path": get_root(),
+        "train": get_image_train_dir(),
+        "val": get_image_val_dir(),
+        "nc": len(class_ids),
+        "names": [x for x, _ in sorted(class_ids.items(), key=lambda x: x[1])]
+    }
+
+    yaml_path = os.path.join(get_dataset_dir(), "dataset.yaml")
+    with open(yaml_path, "w") as f:
+        yaml.dump(data, f, default_flow_style=False, sort_keys=False)
+
 
 

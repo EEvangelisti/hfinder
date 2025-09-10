@@ -29,7 +29,6 @@ import numpy as np
 import importlib.resources as ir
 from itertools import combinations
 from hfinder.core import hf_log as HF_log
-from hfinder.session import folders as HF_folders
 
 
 
@@ -114,36 +113,6 @@ def restore_output(orig_stdout, orig_stderr):
     # Restore
     sys.stdout = orig_stdout
     sys.stderr = orig_stderr
-
-
-
-def write_yolo_yaml(class_ids):
-    """
-    Generate and save a YOLO-compatible dataset YAML file.
-
-    The file `dataset.yaml` is written under the session dataset directory and
-    contains:
-      - `path`: absolute project root,
-      - `train`/`val`: absolute paths to image folders,
-      - `nc`: number of classes,
-      - `names`: class names ordered by class index.
-
-    :param class_ids: Mapping from class name to class index
-                      (e.g., {"cell": 0, "noise": 1}).
-    :type class_ids: dict[str, int]
-    :rtype: None
-    """
-    data = {
-        "path": HF_folders.get_root(),
-        "train": HF_folders.get_image_train_dir(),
-        "val": HF_folders.get_image_val_dir(),
-        "nc": len(class_ids),
-        "names": [x for x, _ in sorted(class_ids.items(), key=lambda x: x[1])]
-    }
-
-    yaml_path = os.path.join(HF_folders.get_dataset_dir(), "dataset.yaml")
-    with open(yaml_path, "w") as f:
-        yaml.dump(data, f, default_flow_style=False, sort_keys=False)
 
 
 
