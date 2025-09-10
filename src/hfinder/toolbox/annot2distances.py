@@ -46,84 +46,10 @@ from typing import Iterable, Tuple, List, Dict, Optional
 import numpy as np
 import tifffile
 from PIL import Image, ImageDraw, ImageFont
+from hfinder.core import hfinder_utils as HFinder_utils
 
 SETTINGS = None
-
-ARGLIST = {
-    "-t": {
-        "long": "--tiff_dir",
-        "config": {
-            "default": ".",
-            "help": "Folder containing TIFF files"
-        }
-    },
-    "-a": {
-        "long": "--annotations",
-        "config": {
-            "default": ".",
-            "help": "Folder containing COCO JSON annotations"
-        }
-    },
-    "-o": {
-        "long": "--out_dir",
-        "config": {
-            "default": ".",
-            "help": "Output folder"
-        }
-    },
-    "-clA": {
-        "long": "--class_A",
-        "config": {
-            "required": True,
-            "help": "Primary class name or numeric id"
-        }
-    },
-    "-clB": {
-        "long": "--class_B",
-        "config": {
-            "default": None,
-            "help": "Secondary class name or numeric id (if omitted, within-class A↔A)"
-        }
-    },
-    "-hue": {
-        "long": "--hues_list",
-        "config": {
-            "default": "180,300,0",
-            "help": "Comma-separated hues (degrees) assigned to channels 0,1,2,... e.g. '0,120,240'"
-        }
-    },    
-    "-s": {
-        "long": "--stroke",
-        "config": {
-            "type": int,
-            "default": 2,
-            "help": "Stroke width for drawing overlays"
-        }
-    },
-    "-ttf": {
-        "long": "--font_file",
-        "config": {
-            "default": "DejaVuSans.ttf",
-            "help": "TTF font for labels (fallback to default if missing)"
-        }
-    },
-    "-sz": {
-        "long": "--font_size",
-        "config": {
-            "type": int,
-            "default": 14,
-            "help": "Font size for labels"
-        }
-    },
-    "-max": {
-        "long": "--max_png",
-        "config": {
-            "type": int,
-            "default": 24,
-            "help": "Max number of PNG overlays to save (to avoid huge dumps)"
-        }
-    }
-}
+ARGLIST = HFinder_utils.load_argument_list("annot2distances.arglist.json") or {}
 
 
 
@@ -141,6 +67,8 @@ def parse_arguments():
         config = param["config"]
         if "default" in config:
             config["help"] = f"{config['help']} (default: {config['default']})"
+        if "type" in config:
+            config["type"] = HFinder_utils.string_to_typefun(config["type"])
         ap.add_argument(short, param["long"], **config)
     global SETTINGS 
     SETTINGS = ap.parse_args()
