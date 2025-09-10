@@ -47,7 +47,8 @@ Use prediction mode to run inference with HFinder.
 
 A pre-trained model is required:
 - You can train your own model (see [Training mode](#training-mode) above).  
-- Or you can download the official pre-trained weights from Zenodo: [![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.1234567.svg)](https://doi.org/10.5281/zenodo.17090880)
+- Or you can download the official pre-trained weights from Zenodo
+[![Download here](https://zenodo.org/badge/DOI/10.5281/zenodo.1234567.svg)](https://doi.org/10.5281/zenodo.17090880)
 
 For step-by-step instructions, see [Prediction guide](doc/prediction.md).
 
