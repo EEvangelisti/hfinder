@@ -28,10 +28,10 @@ from pathlib import Path
 from itertools import chain
 from collections import defaultdict
 from PIL import Image, ImageDraw
-from hfinder.core import hfinder_utils as HFinder_utils
+from hfinder.core import hf_utils as HF_utils
 
 SETTINGS = None
-ARGLIST =  HFinder_utils.load_argument_list("annot2signal.arglist.json") or {}
+ARGLIST =  HF_utils.load_argument_list("annot2signal.arglist.json") or {}
 
 
 

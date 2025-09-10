@@ -43,13 +43,13 @@ from itertools import chain
 from collections import defaultdict
 from matplotlib.colors import Normalize
 from PIL import Image, ImageDraw, ImageFont, ImageOps
-from hfinder.core import hfinder_utils as HFinder_utils
+from hfinder.core import hf_utils as HF_utils
 
 DEFAULT_COLOR = (0, 255, 255)
 ALPHA30 = int(0.30 * 255)
 SETTINGS = None
 
-ARGLIST = HFinder_utils.load_argument_list("annot2images.arglist.json") or {}
+ARGLIST = HF_utils.load_argument_list("annot2images.arglist.json") or {}
 
 
 

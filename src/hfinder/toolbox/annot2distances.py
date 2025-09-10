@@ -46,10 +46,10 @@ from typing import Iterable, Tuple, List, Dict, Optional
 import numpy as np
 import tifffile
 from PIL import Image, ImageDraw, ImageFont
-from hfinder.core import hfinder_utils as HFinder_utils
+from hfinder.core import hf_utils as HF_utils
 
 SETTINGS = None
-ARGLIST = HFinder_utils.load_argument_list("annot2distances.arglist.json") or {}
+ARGLIST = HF_utils.load_argument_list("annot2distances.arglist.json") or {}
 
 
 
@@ -68,7 +68,7 @@ def parse_arguments():
         if "default" in config:
             config["help"] = f"{config['help']} (default: {config['default']})"
         if "type" in config:
-            config["type"] = HFinder_utils.string_to_typefun(config["type"])
+            config["type"] = HF_utils.string_to_typefun(config["type"])
         ap.add_argument(short, param["long"], **config)
     global SETTINGS 
     SETTINGS = ap.parse_args()
