@@ -4,7 +4,7 @@ from hfinder.core import hf_train as HF_train
 from hfinder.core import hf_dataset as HF_dataset
 from hfinder.core import hf_folders as HF_folders
 from hfinder.core import hf_predict as HF_predict
-from hfinder.core import hf_settings as HF_settings
+from hfinder.session import settings as HF_settings
 
 
 def preprocess(args=None):

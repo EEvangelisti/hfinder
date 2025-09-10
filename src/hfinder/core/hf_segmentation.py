@@ -51,7 +51,7 @@ from skimage.morphology import remove_small_holes
 from skimage.morphology import remove_small_objects
 from hfinder.core import hf_log as HF_log
 from hfinder.core import hf_folders as HF_folders
-from hfinder.core import hf_settings as HF_settings
+from hfinder.session import settings as HF_settings
 from hfinder.core import hf_geometry as HF_geometry
 from hfinder.core import hf_imageinfo as HF_ImageInfo
 

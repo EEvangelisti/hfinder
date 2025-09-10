@@ -25,7 +25,7 @@ from ultralytics import YOLO
 from hfinder.core import hf_log as HF_log
 from hfinder.core import hf_utils as HF_utils
 from hfinder.core import hf_folders as HF_folders
-from hfinder.core import hf_settings as HF_settings
+from hfinder.session import settings as HF_settings
 
 
 

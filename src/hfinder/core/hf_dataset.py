@@ -51,7 +51,7 @@ from hfinder.core import hf_utils as HF_utils
 from hfinder.core import hf_folders as HF_folders
 from hfinder.core import hf_palette as HF_palette
 from hfinder.core import hf_imageinfo as HF_ImageInfo
-from hfinder.core import hf_settings as HF_settings
+from hfinder.session import settings as HF_settings
 from hfinder.image import processing as HF_ImageOps
 from hfinder.core import hf_geometry as HF_geometry
 from hfinder.core import hf_segmentation as HF_segmentation
