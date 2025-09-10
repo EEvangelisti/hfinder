@@ -49,7 +49,7 @@ DEFAULT_COLOR = (0, 255, 255)
 ALPHA30 = int(0.30 * 255)
 SETTINGS = None
 
-ARGLIST = HFinder_utils.load_argument_list("annot2images_arglist.json") or {}
+ARGLIST = HFinder_utils.load_argument_list("annot2images.arglist.json") or {}
 
 
 
