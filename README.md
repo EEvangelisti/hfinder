@@ -48,7 +48,8 @@ See the [Installation guide](INSTALL.md) for detailed instructions
 
 ## Pre-trained weights
 
-You can download the pre-trained weights from Zenodo below  
+You can download the pre-trained weights from Zenodo below
+
 [![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.1234567.svg)](https://doi.org/10.5281/zenodo.17090880)
 
 
