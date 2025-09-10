@@ -45,7 +45,7 @@ See the [Installation guide](INSTALL.md) for detailed instructions
 (including GPU/CPU support).
 
 
-### Running
+## Running
 You can then run HFinder as follows:
 
 ```
@@ -61,15 +61,15 @@ where action can be `preprocess`, `train`, or `predict`.
 |`predict`|Detects instances and generates polygons for the specified classes.|
 
 
-## Training Mode
+### Training Mode
 
 See [Training guide](doc/training.md).
 
-## Prediction Mode
+### Prediction Mode
 
 See [Prediction guide](doc/prediction.md).
 
-## HFinder Toolbox
+### HFinder Toolbox
 
 For an introduction to HFinder auxiliary scripts, see [Toolbox guide](doc/toolbox.md).
 
