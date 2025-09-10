@@ -20,10 +20,12 @@ See the [Installation guide](INSTALL.md) for detailed instructions
 
 
 ## Running
-You can then run HFinder as follows:
+
+After installation, HFinder provides a command-line interface.  
+Run it with the following syntax:
 
 ```
-$ hfinder <action>
+hfinder <action>
 ```
 
 where action can be `preprocess`, `train`, or `predict`.
