@@ -28,46 +28,10 @@ from pathlib import Path
 from itertools import chain
 from collections import defaultdict
 from PIL import Image, ImageDraw
+from hfinder.core import hfinder_utils as HFinder_utils
 
 SETTINGS = None
-
-ARGLIST = {
-    "-t": {
-        "long": "--tiff_dir",
-        "config": {
-            "default": ".",
-            "help": "Folder containing TIFF files"
-        }
-    },
-    "-a": {
-        "long": "--annotations",
-        "config": {
-            "default": ".",
-            "help": "Output directory for COCO JSON files"
-        }
-    },
-    "-o": {
-        "long": "--output_dir",
-        "config": {
-            "default": ".",
-            "help": "Output directory for PNG files"
-        }
-    },
-    "-cat": {
-        "long": "--category",
-        "config": {
-            "required": True,
-            "help": "Category to analyse"
-        }
-    },
-    "-sig": {
-        "long": "--signal",
-        "config": {
-            "default": "same",
-            "help": "Index of the channel used to retrieve signal. 'same' = use the detection channel"
-        }
-    }
-}
+ARGLIST =  HFinder_utils.load_argument_list("annot2signal.arglist.json") or {}
 
 
 
