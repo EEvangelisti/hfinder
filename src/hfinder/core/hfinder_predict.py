@@ -366,7 +366,7 @@ def run():
     yaml_path = HFinder_settings.get("yaml")
     if not os.path.isfile(yaml_path):
         HFinder_log.fail(f"YAML file not found: {yaml_path}")
-    class_ids = HFinder_utils.load_class_definitions_from_yaml(yaml_path)  # {"name": id}
+    class_ids = HFinder_settings.load_class_definitions_from_yaml(yaml_path)  # {"name": id}
     id_to_name = {v: k for k, v in class_ids.items()}
 
     try:

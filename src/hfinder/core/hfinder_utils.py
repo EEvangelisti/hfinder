@@ -23,13 +23,30 @@ Notes
 
 import os
 import sys
+import json
 import yaml
 import numpy as np
-from glob import glob
+import importlib.resources as ir
 from itertools import combinations
 import hfinder.core.hfinder_log as HFinder_log
 import hfinder.core.hfinder_folders as HFinder_folders
-import hfinder.core.hfinder_settings as HFinder_settings
+
+
+
+def load_argument_list(filename):
+    """
+    Load a JSON argument list bundled in the ``hfinder.data`` package.
+
+    :param filename: Name of the JSON resource file (e.g. ``"annot2images.arglist.json"``).
+    :type filename: str
+    :return: Parsed JSON content as a Python object (usually a dict or list).
+    :rtype: dict or list
+    :raises FileNotFoundError: If the specified file does not exist in the package.
+    :raises json.JSONDecodeError: If the file content is not valid JSON.
+    """
+    path = ir.files("hfinder.data").joinpath(filename)
+    with path.open("r", encoding="utf-8") as f:
+        return json.load(f)
 
 
 
@@ -133,26 +150,6 @@ def save_yolo_segmentation_label(file_path, annotations, class_ids):
                 continue
             for flat in polygons:  # UNE LIGNE PAR POLYGONE
                 f.write(f"{cls_id} " + " ".join(f"{v:.6f}" for v in flat) + "\n")
-
-
-
-def load_class_definitions():
-    """
-    Extract class names from JSON files in `tiff_dir/classes/` and assign IDs.
-
-    Class names are inferred from file basenames, sorted alphabetically, and
-    assigned increasing integer IDs starting at 0.
-
-    :return: Mapping from class name to class ID, e.g., {"hyphae": 0, "nuclei": 1}.
-    :rtype: dict[str, int]
-    """
-    class_dir = os.path.join(HFinder_settings.get("tiff_dir"), "hf_classes")
-    if not os.path.isdir(class_dir):
-        HFinder_log.fail(f"No such directory: {class_dir}")
-
-    files = sorted(glob(os.path.join(class_dir, "*.json")))
-    names = [os.path.splitext(os.path.basename(f))[0] for f in files]
-    return {name: i for i, name in enumerate(names)}
 
 
 

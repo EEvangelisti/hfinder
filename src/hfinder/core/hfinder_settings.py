@@ -40,8 +40,9 @@ import ast
 import json
 import pydoc
 import importlib.resources as ir
-import hfinder.core.hfinder_log as HFinder_log
-
+from hfinder.core import hfinder_log as HFinder_log
+from hfinder.core import hfinder_utils as HFinder_utils
+from glob import glob
 
     
 # Each setting is defined by a short name, a long name, a type, a default value,
@@ -49,11 +50,8 @@ import hfinder.core.hfinder_log as HFinder_log
 # `"float"`, `"tuple"`, `"str"`), and converted automatically upon loading. 
 # Booleans must be given as strings `"true"` / `"false"`.
 
-SETTINGS = {}
+SETTINGS = HFinder_utils.load_argument_list("hfinder_settings.json") or {}
 
-# Load raw settings from JSON.
-with ir.files("hfinder.data").joinpath("hfinder_settings.json").open("r", encoding="utf-8") as f:
-    SETTINGS = json.load(f)
 
 # Normalize entries: resolve types, register long-name indirections, and
 # coerce textual defaults into the proper Python types.
@@ -233,4 +231,26 @@ def print_summary():
             if compatible_modes(SETTINGS[key]['mode'], SETTINGS["running_mode"]):
                 value = False if "default" not in SETTINGS[key]["config"] else SETTINGS[key]["config"]['default']
                 HFinder_log.info(f"[SETTING] '{SETTINGS[key]['long']}' = {value}")
+
+
+
+def load_class_definitions():
+    """
+    Extract class names from JSON files in `tiff_dir/classes/` and assign IDs.
+
+    Class names are inferred from file basenames, sorted alphabetically, and
+    assigned increasing integer IDs starting at 0.
+
+    :return: Mapping from class name to class ID, e.g., {"hyphae": 0, "nuclei": 1}.
+    :rtype: dict[str, int]
+    """
+    class_dir = os.path.join(get("tiff_dir"), "hf_classes")
+    if not os.path.isdir(class_dir):
+        HFinder_log.fail(f"No such directory: {class_dir}")
+
+    files = sorted(glob(os.path.join(class_dir, "*.json")))
+    names = [os.path.splitext(os.path.basename(f))[0] for f in files]
+    return {name: i for i, name in enumerate(names)}
+
+
 

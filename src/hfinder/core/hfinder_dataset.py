@@ -220,7 +220,7 @@ def generate_dataset(base, n, c, channels, polygons_per_channel):
     img_dir = HFinder_folders.get_image_train_dir()
     lbl_dir = HFinder_folders.get_label_train_dir()
 
-    class_ids = HFinder_utils.load_class_definitions()
+    class_ids = HFinder_settings.load_class_definitions()
 
     annotated_channels = {ch for ch, polys in polygons_per_channel.items() if polys}
     all_channels = set(channels.keys())
@@ -569,7 +569,7 @@ def generate_training_dataset():
     data_dir = HFinder_settings.get("tiff_dir")
     image_paths = sorted(glob(os.path.join(data_dir, "*.tif")))
     
-    class_ids = HFinder_utils.load_class_definitions()
+    class_ids = HFinder_settings.load_class_definitions()
     HFinder_utils.write_yolo_yaml(class_ids)
     HFinder_ImageInfo.initialize()
 
