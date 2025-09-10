@@ -612,6 +612,5 @@ def main():
             except Exception as e:
                 print(f"   ⚠️  Composite failed: {e}")
 
+    return 0
 
-if __name__ == "__main__":
-    main()

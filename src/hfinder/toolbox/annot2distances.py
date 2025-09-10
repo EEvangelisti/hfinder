@@ -458,7 +458,7 @@ def draw_polygons_and_centroids(rgb: Image.Image,
 
 # ----------------------------- Main ----------------------------- #
 
-def main() -> None:
+def main():
     """
     CLI entry-point: compute distances and save overlays/CSV.
 
@@ -582,7 +582,6 @@ def main() -> None:
             for base, pair, i, d in rows:
                 f.write(f"{base},{pair},{i},{d}\n")
 
+    return 0
 
-if __name__ == "__main__":
-    main()
 

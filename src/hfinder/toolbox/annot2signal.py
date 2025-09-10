@@ -325,8 +325,5 @@ def main():
                     f.write(f"{tif_path.name}\t{SETTINGS.category}\t{cx}\t{cy}\t{seg_mean}\n")
 
     print(f"✅ Data saved in file '{out_tsv}'")
-
-
-if __name__ == "__main__":
-    main()
+    return 0
 
