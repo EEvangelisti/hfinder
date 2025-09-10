@@ -34,12 +34,12 @@ from glob import glob
 from collections import defaultdict, Counter
 from ultralytics import YOLO
 
-import hfinder_log as HFinder_log
-import hfinder_folders as HFinder_folders
-import hfinder_settings as HFinder_settings
-import hfinder_imageops as HFinder_ImageOps
-import hfinder_palette as HFinder_palette
-import hfinder_utils as HFinder_utils
+import hfinder.core.hfinder_log as HFinder_log
+import hfinder.core.hfinder_folders as HFinder_folders
+import hfinder.core.hfinder_settings as HFinder_settings
+import hfinder.core.hfinder_imageops as HFinder_ImageOps
+import hfinder.core.hfinder_palette as HFinder_palette
+import hfinder.core.hfinder_utils as HFinder_utils
 
 
 

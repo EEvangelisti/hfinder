@@ -39,7 +39,7 @@ import sys
 import ast
 import json
 import pydoc
-import hfinder_log as HFinder_log
+import hfinder.core.hfinder_log as HFinder_log
 
 # Each setting is defined by a short name, a long name, a type, a default value,
 # and an optional mode. Types are given as Python dotted strings (e.g. `"int"`, 

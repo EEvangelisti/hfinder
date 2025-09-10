@@ -27,9 +27,9 @@ import yaml
 import numpy as np
 from glob import glob
 from itertools import combinations
-import hfinder_log as HFinder_log
-import hfinder_folders as HFinder_folders
-import hfinder_settings as HFinder_settings
+import hfinder.core.hfinder_log as HFinder_log
+import hfinder.core.hfinder_folders as HFinder_folders
+import hfinder.core.hfinder_settings as HFinder_settings
 
 
 

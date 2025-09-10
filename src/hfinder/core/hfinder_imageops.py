@@ -27,10 +27,10 @@ import cv2
 import numpy as np
 from PIL import Image
 from matplotlib.colors import hsv_to_rgb
-import hfinder_log as HFinder_log
-import hfinder_palette as HFinder_palette
-import hfinder_settings as HFinder_settings
-import hfinder_imageinfo as HFinder_ImageInfo
+import hfinder.core.hfinder_log as HFinder_log
+import hfinder.core.hfinder_palette as HFinder_palette
+import hfinder.core.hfinder_settings as HFinder_settings
+import hfinder.core.hfinder_imageinfo as HFinder_ImageInfo
 
 
 

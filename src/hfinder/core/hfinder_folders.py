@@ -48,7 +48,7 @@ Notes
 
 import os
 from datetime import datetime
-import hfinder_log as HFinder_log
+import hfinder.core.hfinder_log as HFinder_log
 
 
 # In-memory description of the session folder tree.

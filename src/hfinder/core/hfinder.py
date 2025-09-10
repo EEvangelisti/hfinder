@@ -1,10 +1,10 @@
 import argparse
-import hfinder_log as HFinder_log
-import hfinder_train as HFinder_train
-import hfinder_dataset as HFinder_dataset
-import hfinder_folders as HFinder_folders
-import hfinder_predict as HFinder_predict
-import hfinder_settings as HFinder_settings
+import hfinder.core.hfinder_log as HFinder_log
+import hfinder.core.hfinder_train as HFinder_train
+import hfinder.core.hfinder_dataset as HFinder_dataset
+import hfinder.core.hfinder_folders as HFinder_folders
+import hfinder.core.hfinder_predict as HFinder_predict
+import hfinder.core.hfinder_settings as HFinder_settings
 
 
 def preprocess(args=None):

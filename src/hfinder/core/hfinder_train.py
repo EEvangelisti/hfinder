@@ -22,10 +22,10 @@ import gc
 import os
 import torch
 from ultralytics import YOLO
-import hfinder_log as HFinder_log
-import hfinder_utils as HFinder_utils
-import hfinder_folders as HFinder_folders
-import hfinder_settings as HFinder_settings
+import hfinder.core.hfinder_log as HFinder_log
+import hfinder.core.hfinder_utils as HFinder_utils
+import hfinder.core.hfinder_folders as HFinder_folders
+import hfinder.core.hfinder_settings as HFinder_settings
 
 
 

@@ -49,11 +49,11 @@ from skimage.feature import peak_local_max
 from skimage.morphology import binary_closing
 from skimage.morphology import remove_small_holes
 from skimage.morphology import remove_small_objects
-import hfinder_log as HFinder_log
-import hfinder_folders as HFinder_folders
-import hfinder_settings as HFinder_settings
-import hfinder_geometry as HFinder_geometry
-import hfinder_imageinfo as HFinder_ImageInfo
+import hfinder.core.hfinder_log as HFinder_log
+import hfinder.core.hfinder_folders as HFinder_folders
+import hfinder.core.hfinder_settings as HFinder_settings
+import hfinder.core.hfinder_geometry as HFinder_geometry
+import hfinder.core.hfinder_imageinfo as HFinder_ImageInfo
 
 
 def mask_to_polygons(mask,
