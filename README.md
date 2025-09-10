@@ -19,8 +19,6 @@ See the [Installation guide](INSTALL.md) for detailed instructions
 
 
 
-
-
 ## Running
 You can then run HFinder as follows:
 
@@ -57,5 +55,5 @@ For step-by-step instructions, see [Prediction guide](doc/prediction.md).
 
 ### HFinder Toolbox
 
-For an introduction to HFinder auxiliary scripts, see [Toolbox guide](doc/toolbox.md).
-
+HFinder includes additional tools to explore predictions, analyze signals, and measure distances.  
+For an introduction to these auxiliary scripts, see the [Toolbox guide](doc/toolbox.md).
