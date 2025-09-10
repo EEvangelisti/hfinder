@@ -37,12 +37,19 @@ framework to accelerate annotation, training, and large-scale image analysis.
 It provides both **pretrained models** and the **full workflow** to retrain on 
 custom datasets, making it immediately usable yet fully adaptable.
 
+
 ## Installation
 
 HFinder is distributed as a Python package and can be installed with `pip`.
 
 See the [Installation guide](INSTALL.md) for detailed instructions
 (including GPU/CPU support).
+
+
+## Pre-trained weights
+
+You can download the pre-trained weights from Zenodo below  
+[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.1234567.svg)](https://doi.org/10.5281/zenodo.17090880)
 
 
 ## Running
