@@ -1,0 +1,20 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "hfinder"
+version = "0.1.0"
+description = "HFinder"
+readme = "README.md"
+requires-python = ">=3.9"
+dependencies = [
+  "pyyaml",
+  "ultralytics",
+  "tifffile",
+  "scikit-image",
+]
+
+[project.scripts]
+hfinder = "hfinder.cli:main"
+annot2images = "hfinder.cli:annot2images"
