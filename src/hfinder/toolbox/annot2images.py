@@ -43,15 +43,14 @@ from itertools import chain
 from collections import defaultdict
 from matplotlib.colors import Normalize
 from PIL import Image, ImageDraw, ImageFont, ImageOps
+from hfinder.core import hfinder_utils as HFinder_utils
 
 DEFAULT_COLOR = (0, 255, 255)
 ALPHA30 = int(0.30 * 255)
 SETTINGS = None
 
-PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-arglist_file = os.path.join(PROJECT_ROOT, "toolbox", "annot2images_arglist.json")
-with open(arglist_file, "r") as f:
-    ARGLIST = json.load(f)
+ARGLIST = HFinder_utils.load_argument_list("annot2images_arglist.json") or {}
+
 
 
 def sanitize(name):
