@@ -34,12 +34,12 @@ from glob import glob
 from collections import defaultdict, Counter
 from ultralytics import YOLO
 
-from hfinder.core import hfinder_log as HFinder_log
-from hfinder.core import hfinder_folders as HFinder_folders
-from hfinder.core import hfinder_settings as HFinder_settings
-from hfinder.core import hfinder_imageops as HFinder_ImageOps
-from hfinder.core import hfinder_palette as HFinder_palette
-from hfinder.core import hfinder_utils as HFinder_utils
+from hfinder.core import hf_log as HF_log
+from hfinder.core import hf_folders as HF_folders
+from hfinder.core import hf_settings as HF_settings
+from hfinder.core import hf_imageops as HF_ImageOps
+from hfinder.core import hf_palette as HF_palette
+from hfinder.core import hf_utils as HF_utils
 
 
 
@@ -111,7 +111,7 @@ def build_fusions_for_tiff(tif_path, out_dir, rng=None):
         rng = random.Random(0)
 
     img = tifffile.imread(tif_path)
-    channels_dict, ratio, (n, c) = HFinder_ImageOps.resize_multichannel_image(img)
+    channels_dict, ratio, (n, c) = HF_ImageOps.resize_multichannel_image(img)
     all_channels = sorted(channels_dict.keys())
 
     os.makedirs(out_dir, exist_ok=True)
@@ -127,7 +127,7 @@ def build_fusions_for_tiff(tif_path, out_dir, rng=None):
             pass
 
         out_path = os.path.join(out_dir, f"{base}_{i}.jpg")
-        HFinder_ImageOps.save_gray_as_rgb(channels_dict[i], out_path)
+        HF_ImageOps.save_gray_as_rgb(channels_dict[i], out_path)
         frames.append({
             "path": out_path,
             "channel": i,
@@ -308,7 +308,7 @@ def channel_scores(det_subset):
     :rtype: tuple[int, float, float, dict[int, float]]
     """
     scores = defaultdict(float)
-    method = HFinder_settings.get("power")
+    method = HF_settings.get("power")
 
     if method == "log":
         # Pre-define a function for the log-likelihood scoring
@@ -318,7 +318,7 @@ def channel_scores(det_subset):
         try:
             n = int(method)
         except Exception:
-            HFinder_log.warn(f"Unknown method {method}")
+            HF_log.warn(f"Unknown method {method}")
             n = 4  # Fallback
         # Pre-define a function for power-based scoring
         def scoring(x, n=n):
@@ -350,51 +350,51 @@ def run():
     :rtype: None
     """
     # Model
-    model = HFinder_settings.get("model")
+    model = HF_settings.get("model")
     if not model:
-        HFinder_log.fail("Model needed to perform predictions")
+        HF_log.fail("Model needed to perform predictions")
     if not os.path.exists(model):
-        HFinder_log.fail(f"Model file not found: {model}")
+        HF_log.fail(f"Model file not found: {model}")
     model = YOLO(model)
 
     # Settings
-    conf = HFinder_settings.get("confidence")
-    imgsz = HFinder_settings.get("size")
-    batch = HFinder_settings.get("batch")
+    conf = HF_settings.get("confidence")
+    imgsz = HF_settings.get("size")
+    batch = HF_settings.get("batch")
 
     # Retrieve class names from a YAML file (e.g., generated during training)
-    yaml_path = HFinder_settings.get("yaml")
+    yaml_path = HF_settings.get("yaml")
     if not os.path.isfile(yaml_path):
-        HFinder_log.fail(f"YAML file not found: {yaml_path}")
-    class_ids = HFinder_settings.load_class_definitions_from_yaml(yaml_path)  # {"name": id}
+        HF_log.fail(f"YAML file not found: {yaml_path}")
+    class_ids = HF_settings.load_class_definitions_from_yaml(yaml_path)  # {"name": id}
     id_to_name = {v: k for k, v in class_ids.items()}
 
     try:
-        wl_raw = HFinder_settings.get("overlay_whitelist") or "[]"
+        wl_raw = HF_settings.get("overlay_whitelist") or "[]"
         wl_pairs = json.loads(wl_raw)  # e.g. [["haustoria","hyphae"]]
     except Exception:
         wl_pairs = []
     whitelist_ids = build_whitelist_ids(wl_pairs, class_ids)  # set of frozenset({idA,idB})
     if wl_pairs and not whitelist_ids:
-        HFinder_log.warn("overlay_whitelist provided but no names matched class IDs from YAML.")
+        HF_log.warn("overlay_whitelist provided but no names matched class IDs from YAML.")
 
     # Torch settings
-    device = resolve_device(HFinder_settings.get("device"))
+    device = resolve_device(HF_settings.get("device"))
     if device == "cpu":
         torch.set_num_threads(max(1, (os.cpu_count() or 2) // 2))
         torch.set_num_interop_threads(1)
 
     # Input TIFFs
-    input_folder = HFinder_settings.get("tiff_dir")
+    input_folder = HF_settings.get("tiff_dir")
     if not input_folder or not os.path.isdir(input_folder):
-        HFinder_log.fail(f"Invalid directory: {input_folder}")
+        HF_log.fail(f"Invalid directory: {input_folder}")
     tiffs = sorted(glob(os.path.join(input_folder, "*.tif")) + glob(os.path.join(input_folder, "*.tiff")))
     if not tiffs:
-        HFinder_log.warn(f"No TIFF files found in {input_folder}")
+        HF_log.warn(f"No TIFF files found in {input_folder}")
         return
 
-    project = HFinder_folders.get_runs_dir()
-    HFinder_log.info(f"Predicting on {len(tiffs)} TIFF(s) | conf={conf} | imgsz={imgsz} | device={device}")
+    project = HF_folders.get_runs_dir()
+    HF_log.info(f"Predicting on {len(tiffs)} TIFF(s) | conf={conf} | imgsz={imgsz} | device={device}")
 
     # ---- TIFF loop -----------------------------------------------------------
     for tif_path in tiffs:
@@ -412,9 +412,9 @@ def run():
         fusion_paths = [f["path"] for f in frames]
         fusion_meta = {f["path"]: f for f in frames}
         if not fusion_paths:
-            HFinder_log.warn(f"Skipping file '{tif_file}'")
+            HF_log.warn(f"Skipping file '{tif_file}'")
             continue
-        HFinder_log.info(f"Processing '{tif_file}'")
+        HF_log.info(f"Processing '{tif_file}'")
 
         # 2) Run predictions on all frames
         results = model.predict(

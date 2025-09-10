@@ -15,13 +15,13 @@ Public API
 Notes
 -----
 - The normalization assumes that images have been resized to a square of side
-  `size = HFinder_settings.get("size")`.
+  `size = HF_settings.get("size")`.
 - Duplicate removal only removes consecutive duplicates.
 - Sub-sampling uses linearly spaced indices to preserve shape coverage.
 """
 
 import numpy as np
-from hfinder.core import hfinder_settings as HFinder_settings
+from hfinder.core import hf_settings as HF_settings
 
 
 
@@ -41,7 +41,7 @@ def contours_to_yolo_polygons(contours,
 
     **Assumptions**
       - Images have been resized to a *square* of side `size` pixels, where
-        `size = HFinder_settings.get("size")`. Both x and y are divided by this
+        `size = HF_settings.get("size")`. Both x and y are divided by this
         same `size`. If your data are not square, adapt the normalization.
 
     :param contours: Iterable of OpenCV contours, each with shape (N, 1, 2).
@@ -70,7 +70,7 @@ def contours_to_yolo_polygons(contours,
     out = []
 
     # Fetch the (square) target side length for normalization
-    size = HFinder_settings.get("size")
+    size = HF_settings.get("size")
 
     for c in contours:
         # Skip invalid inputs: must be ndarray of shape (N, 1, 2)
@@ -133,6 +133,6 @@ def flat_to_pts_xy(flat):
     """
     assert len(flat) % 2 == 0, "Polygon length must be even."
     # Multiply normalized coords by width/height to get absolute pixels.
-    r = HFinder_settings.get("size")
+    r = HF_settings.get("size")
     pts = [(int(flat[i] * r), int(flat[i+1] * r)) for i in range(0, len(flat), 2)]
     return np.asarray(pts, dtype=np.int32)

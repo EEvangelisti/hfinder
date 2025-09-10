@@ -49,11 +49,11 @@ from skimage.feature import peak_local_max
 from skimage.morphology import binary_closing
 from skimage.morphology import remove_small_holes
 from skimage.morphology import remove_small_objects
-from hfinder.core import hfinder_log as HFinder_log
-from hfinder.core import hfinder_folders as HFinder_folders
-from hfinder.core import hfinder_settings as HFinder_settings
-from hfinder.core import hfinder_geometry as HFinder_geometry
-from hfinder.core import hfinder_imageinfo as HFinder_ImageInfo
+from hfinder.core import hf_log as HF_log
+from hfinder.core import hf_folders as HF_folders
+from hfinder.core import hf_settings as HF_settings
+from hfinder.core import hf_geometry as HF_geometry
+from hfinder.core import hf_imageinfo as HF_ImageInfo
 
 
 def mask_to_polygons(mask,
@@ -106,8 +106,8 @@ def mask_to_polygons(mask,
         return cv2.approxPolyDP(c, eps, True)
 
     # Minimum area for the local image, or global settings
-    min_area = HFinder_ImageInfo.get("min_area_px")
-    min_area = float(HFinder_settings.get("min_area_px")) if min_area is None else float(min_area)
+    min_area = HF_ImageInfo.get("min_area_px")
+    min_area = float(HF_settings.get("min_area_px")) if min_area is None else float(min_area)
 
     if mode == "rings":
         # Keep rings explicitly: one entry per region [outer, hole1, ...]
@@ -290,13 +290,13 @@ def filter_contours_min_area(contours):
 
     :param contours: OpenCV contours as returned by ``cv2.findContours``.
     :type contours: list[np.ndarray]
-    :returns: Subset of contours with area >= ``HFinder_settings.get("min_area_px")``.
+    :returns: Subset of contours with area >= ``HF_settings.get("min_area_px")``.
     :rtype: list[np.ndarray]
     """
-    special_case = HFinder_ImageInfo.get("min_area_px")
+    special_case = HF_ImageInfo.get("min_area_px")
     if special_case is None:
         # General setting used throughout the program
-        min_area_px = HFinder_settings.get("min_area_px")
+        min_area_px = HF_settings.get("min_area_px")
     else:
         # Local setting
         min_area_px = special_case
@@ -347,9 +347,9 @@ def auto_threshold_strategy(img, threshold):
     
     # Optional: exhaustive threshold exploration for debugging/papers
     if False: # FIXME: Insert this with an option
-        base = HFinder_ImageInfo.get_current_base()
+        base = HF_ImageInfo.get_current_base()
         fig, _ = skimage.filters.try_all_threshold(img)
-        root = HFinder_folders.get_masks_dir()
+        root = HF_folders.get_masks_dir()
         output = os.path.join(root, f"{base}_all_threshold.jpg")
         print(output)
         fig.savefig(output, dpi=300, bbox_inches="tight")
@@ -375,7 +375,7 @@ def auto_threshold_strategy(img, threshold):
         skew_ratio = (mean_val - median_val) / (max_val + 1e-5)
         return auto_threshold_strategy(img,"triangle" if skew_ratio > 0.15 else "otsu")
     else:
-        HFinder_log.warn(f"Unknown thresholding function '{threshold}'")
+        HF_log.warn(f"Unknown thresholding function '{threshold}'")
         return auto_threshold_strategy(img, "otsu")
 
     return float(thresh), noise_and_gaps(img > thresh)
@@ -420,7 +420,7 @@ def channel_custom_threshold(channel, threshold):
     contours = filter_contours_min_area(contours)
     
     # Convert to YOLO-normalized polygons
-    yolo_polygons = HFinder_geometry.contours_to_yolo_polygons(contours)
+    yolo_polygons = HF_geometry.contours_to_yolo_polygons(contours)
 
     return binary, yolo_polygons
 
@@ -429,14 +429,14 @@ def channel_custom_threshold(channel, threshold):
 def channel_auto_threshold(channel):
     """
     Wrapper around ``channel_custom_threshold`` that uses the default threshold
-    from settings (``HFinder_settings.get("auto_threshold")``).
+    from settings (``HF_settings.get("auto_threshold")``).
 
     :param channel: 2D single-channel image (uint8 recommended).
     :type channel: np.ndarray
     :returns: (cleaned binary mask, list of flattened YOLO-normalized polygons).
     :rtype: tuple[np.ndarray, list[list[float]]]
     """
-    auto_threshold = HFinder_settings.get("auto_threshold")
+    auto_threshold = HF_settings.get("auto_threshold")
     return channel_custom_threshold(channel, auto_threshold)
 
 
@@ -461,7 +461,7 @@ def channel_custom_segment(json_path, ratio):
     with open(json_path, "r") as f:
         data = json.load(f)
 
-    size = HFinder_settings.get("size")
+    size = HF_settings.get("size")
 
     polygons = []
     for ann in data.get("annotations", []):
@@ -471,7 +471,7 @@ def channel_custom_segment(json_path, ratio):
         for seg in ann["segmentation"]:
             # Skip empty/odd-length lists; warn for traceability
             if not seg or len(seg) % 2 != 0:
-                HFinder_log.warn(f"Invalid segmentation in {json_path}, " + \
+                HF_log.warn(f"Invalid segmentation in {json_path}, " + \
                                  f"annotation id {ann.get('id')}")
                 continue
 

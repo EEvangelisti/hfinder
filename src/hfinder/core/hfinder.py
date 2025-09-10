@@ -1,34 +1,34 @@
 import argparse
-from hfinder.core import hfinder_log as HFinder_log
-from hfinder.core import hfinder_train as HFinder_train
-from hfinder.core import hfinder_dataset as HFinder_dataset
-from hfinder.core import hfinder_folders as HFinder_folders
-from hfinder.core import hfinder_predict as HFinder_predict
-from hfinder.core import hfinder_settings as HFinder_settings
+from hfinder.core import hf_log as HF_log
+from hfinder.core import hf_train as HF_train
+from hfinder.core import hf_dataset as HF_dataset
+from hfinder.core import hf_folders as HF_folders
+from hfinder.core import hf_predict as HF_predict
+from hfinder.core import hf_settings as HF_settings
 
 
 def preprocess(args=None):
     if args is not None:
-        HFinder_settings.load(args)
-        HFinder_settings.set("running_mode", "preprocess")
-    HFinder_settings.print_summary()
-    HFinder_folders.create_session_folders()
-    HFinder_dataset.generate_training_dataset()
+        HF_settings.load(args)
+        HF_settings.set("running_mode", "preprocess")
+    HF_settings.print_summary()
+    HF_folders.create_session_folders()
+    HF_dataset.generate_training_dataset()
 
 
 def train(args):
-    HFinder_settings.load(args)
-    HFinder_settings.set("running_mode", "train")
+    HF_settings.load(args)
+    HF_settings.set("running_mode", "train")
     preprocess()
-    HFinder_train.run()
+    HF_train.run()
 
 
 def predict(args):
-    HFinder_settings.load(args)
-    HFinder_settings.set("running_mode", "predict")
-    HFinder_settings.print_summary()
-    HFinder_folders.create_session_folders()
-    HFinder_predict.run()
+    HF_settings.load(args)
+    HF_settings.set("running_mode", "predict")
+    HF_settings.print_summary()
+    HF_folders.create_session_folders()
+    HF_predict.run()
 
 
 def main():
@@ -38,17 +38,17 @@ def main():
 
     # ---- Subcommand: preprocessing ----
     parser_check = subparsers.add_parser("preprocess", help="Generate and validate binary masks")
-    HFinder_settings.define_arguments(parser_check, "preprocess")
+    HF_settings.define_arguments(parser_check, "preprocess")
     parser_check.set_defaults(func=preprocess)
 
     # ---- Subcommand: training ----
     parser_train = subparsers.add_parser("train", help="Train YOLOv8 model")
-    HFinder_settings.define_arguments(parser_train, "train")
+    HF_settings.define_arguments(parser_train, "train")
     parser_train.set_defaults(func=train)
 
     # ---- Subcommand: training ----
     parser_predict = subparsers.add_parser("predict", help="Predict using YOLOv8")
-    HFinder_settings.define_arguments(parser_predict, "predict")
+    HF_settings.define_arguments(parser_predict, "predict")
     parser_predict.set_defaults(func=predict)
 
     # ---- Parse args and dispatch ----

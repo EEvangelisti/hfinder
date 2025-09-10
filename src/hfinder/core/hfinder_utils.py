@@ -18,7 +18,7 @@ Public API
 
 Notes
 -----
-- All paths resolve via hfinder_folders and hfinder_settings to keep I/O centralized.
+- All paths resolve via hf_folders and hf_settings to keep I/O centralized.
 """
 
 import os
@@ -28,8 +28,8 @@ import yaml
 import numpy as np
 import importlib.resources as ir
 from itertools import combinations
-from hfinder.core import hfinder_log as HFinder_log
-from hfinder.core import hfinder_folders as HFinder_folders
+from hfinder.core import hf_log as HF_log
+from hfinder.core import hf_folders as HF_folders
 
 
 
@@ -134,14 +134,14 @@ def write_yolo_yaml(class_ids):
     :rtype: None
     """
     data = {
-        "path": HFinder_folders.get_root(),
-        "train": HFinder_folders.get_image_train_dir(),
-        "val": HFinder_folders.get_image_val_dir(),
+        "path": HF_folders.get_root(),
+        "train": HF_folders.get_image_train_dir(),
+        "val": HF_folders.get_image_val_dir(),
         "nc": len(class_ids),
         "names": [x for x, _ in sorted(class_ids.items(), key=lambda x: x[1])]
     }
 
-    yaml_path = os.path.join(HFinder_folders.get_dataset_dir(), "dataset.yaml")
+    yaml_path = os.path.join(HF_folders.get_dataset_dir(), "dataset.yaml")
     with open(yaml_path, "w") as f:
         yaml.dump(data, f, default_flow_style=False, sort_keys=False)
 

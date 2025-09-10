@@ -27,10 +27,10 @@ import cv2
 import numpy as np
 from PIL import Image
 from matplotlib.colors import hsv_to_rgb
-from hfinder.core import hfinder_log as HFinder_log
-from hfinder.core import hfinder_palette as HFinder_palette
-from hfinder.core import hfinder_settings as HFinder_settings
-from hfinder.core import hfinder_imageinfo as HFinder_ImageInfo
+from hfinder.core import hf_log as HF_log
+from hfinder.core import hf_palette as HF_palette
+from hfinder.core import hf_settings as HF_settings
+from hfinder.core import hf_imageinfo as HF_ImageInfo
 
 
 
@@ -83,7 +83,7 @@ def resize_multichannel_image(img):
     :rtype: tuple
     """
 
-    size = HFinder_settings.get("size")
+    size = HF_settings.get("size")
  
     # Determine if we have a z-axis or just channels
     if img.ndim == 4:
@@ -99,8 +99,8 @@ def resize_multichannel_image(img):
     for n_i in range(n):
         for c_i in range(c):
             index = n_i * c + c_i # global frame index
-            if HFinder_settings.get("running_mode") in ["preprocess", "train"] and HFinder_ImageInfo.is_hidden_channel(c_i + 1):
-                HFinder_log.info(f"Hiding channel {c_i + 1} in {HFinder_ImageInfo.get_name()}")
+            if HF_settings.get("running_mode") in ["preprocess", "train"] and HF_ImageInfo.is_hidden_channel(c_i + 1):
+                HF_log.info(f"Hiding channel {c_i + 1} in {HF_ImageInfo.get_name()}")
                 frame = np.zeros((size, size), dtype=img.dtype)
             else:
                 frame = img[c_i] if n == 1 else img[n_i][c_i]
@@ -195,7 +195,7 @@ def compose_hue_fusion(channels, selected_channels, palette, noise_channels=None
     # Render selected channels in full intensity.
     for ch in selected_channels:
         frame = channels[ch]
-        hue = HFinder_palette.get_color(ch, palette=palette)[0]
+        hue = HF_palette.get_color(ch, palette=palette)[0]
         colored = colorize_with_hue(frame, hue) 
         rgb += colored
 
@@ -203,7 +203,7 @@ def compose_hue_fusion(channels, selected_channels, palette, noise_channels=None
     if noise_channels:
         for ch in noise_channels:
             frame = channels[ch]
-            hue = HFinder_palette.get_color(ch, palette=palette)[0]
+            hue = HF_palette.get_color(ch, palette=palette)[0]
             noise = colorize_with_hue(frame, hue)
             rgb += 0.3 * noise 
 

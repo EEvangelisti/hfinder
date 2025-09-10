@@ -48,7 +48,7 @@ Notes
 
 import os
 from datetime import datetime
-from hfinder.core import hfinder_log as HFinder_log
+from hfinder.core import hf_log as HF_log
 
 
 # In-memory description of the session folder tree.
@@ -124,7 +124,7 @@ def create_session_folders():
     :rtype: None
     """
     base = get_timestamp()
-    HFinder_log.info(f"Creating session folder {base}")
+    HF_log.info(f"Creating session folder {base}")
     
     # Declarative specification of the expected subfolders.
     folder_tree = {

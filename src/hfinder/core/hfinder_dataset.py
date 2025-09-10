@@ -46,15 +46,15 @@ from PIL import Image
 from glob import glob
 from itertools import chain
 from collections import defaultdict
-from hfinder.core import hfinder_log as HFinder_log
-from hfinder.core import hfinder_utils as HFinder_utils
-from hfinder.core import hfinder_folders as HFinder_folders
-from hfinder.core import hfinder_palette as HFinder_palette
-from hfinder.core import hfinder_imageinfo as HFinder_ImageInfo
-from hfinder.core import hfinder_settings as HFinder_settings
-from hfinder.core import hfinder_imageops as HFinder_ImageOps
-from hfinder.core import hfinder_geometry as HFinder_geometry
-from hfinder.core import hfinder_segmentation as HFinder_segmentation
+from hfinder.core import hf_log as HF_log
+from hfinder.core import hf_utils as HF_utils
+from hfinder.core import hf_folders as HF_folders
+from hfinder.core import hf_palette as HF_palette
+from hfinder.core import hf_imageinfo as HF_ImageInfo
+from hfinder.core import hf_settings as HF_settings
+from hfinder.core import hf_imageops as HF_ImageOps
+from hfinder.core import hf_geometry as HF_geometry
+from hfinder.core import hf_segmentation as HF_segmentation
 
 
 
@@ -65,7 +65,7 @@ def prepare_class_inputs(channels, n, c, ratio):
     Generate segmentation masks and polygon annotations per class, for each
     frame or image channel, based on class-specific directives.
 
-    For each class (from HFinder_ImageInfo):
+    For each class (from HF_ImageInfo):
       - If a custom threshold is defined: threshold → mask → contours → polygons.
       - Else if a manual segmentation JSON is provided: load polygons (scaled).
       - Else: apply automatic thresholding → mask → contours → polygons.
@@ -87,24 +87,24 @@ def prepare_class_inputs(channels, n, c, ratio):
         - Flat polygons are lists like [x1, y1, ..., xn, yn], normalized to [0, 1].
     """
     results = defaultdict(list)
-    masks_dir = HFinder_folders.get_masks_dir()
-    base = HFinder_settings.get("current_image.base")
+    masks_dir = HF_folders.get_masks_dir()
+    base = HF_settings.get("current_image.base")
 
-    for cls in HFinder_ImageInfo.get_classes():
+    for cls in HF_ImageInfo.get_classes():
     
-        HFinder_ImageInfo.set_current_class(cls)
+        HF_ImageInfo.set_current_class(cls)
         # Per-class directives
-        ch = HFinder_ImageInfo.get_channel()
-        threshold = HFinder_ImageInfo.get_threshold()
-        poly_json = HFinder_ImageInfo.get_manual_segmentation()
+        ch = HF_ImageInfo.get_channel()
+        threshold = HF_ImageInfo.get_threshold()
+        poly_json = HF_ImageInfo.get_manual_segmentation()
 
         if threshold is not None:
             # Custom (fixed) thresholding across a frame range
-            from_frame = HFinder_ImageInfo.from_frame(default=0)
-            to_frame = HFinder_ImageInfo.to_frame(default=n)
+            from_frame = HF_ImageInfo.from_frame(default=0)
+            to_frame = HF_ImageInfo.to_frame(default=n)
             for i in range(from_frame // c, to_frame // c + 1):
                 frame = i * c + ch
-                binary, polygons = HFinder_segmentation.channel_custom_threshold(channels[frame], threshold)
+                binary, polygons = HF_segmentation.channel_custom_threshold(channels[frame], threshold)
                 results[frame].append((cls, polygons))
                 name = f"{base}_{cls}_mask.png" if n == 1 \
                        else f"{base}_frame{frame}_{cls}_mask.png"
@@ -114,18 +114,18 @@ def prepare_class_inputs(channels, n, c, ratio):
         elif poly_json is not None:
             # Load user-provided segmentation polygons (single-plane only)
             if n > 1:
-                HFinder_log.fail(f"File '{base}.tif' - applying user segmentation to Z-stacks has not been implemented yet")
-            json_path = os.path.join(HFinder_settings.get("tiff_dir"), poly_json)
-            polygons = HFinder_segmentation.channel_custom_segment(json_path, ratio)
+                HF_log.fail(f"File '{base}.tif' - applying user segmentation to Z-stacks has not been implemented yet")
+            json_path = os.path.join(HF_settings.get("tiff_dir"), poly_json)
+            polygons = HF_segmentation.channel_custom_segment(json_path, ratio)
             results[ch].append((cls, polygons))
 
         else:
             # Automatic thresholding as a fallback
-            from_frame = HFinder_ImageInfo.from_frame(default=0)
-            to_frame = HFinder_ImageInfo.to_frame(default=n)
+            from_frame = HF_ImageInfo.from_frame(default=0)
+            to_frame = HF_ImageInfo.to_frame(default=n)
             for i in range(from_frame // c, to_frame // c + 1):
                 frame = i * c + ch
-                binary, polygons = HFinder_segmentation.channel_auto_threshold(channels[frame])
+                binary, polygons = HF_segmentation.channel_auto_threshold(channels[frame])
                 results[frame].append((cls, polygons))
                 name = f"{base}_{cls}_mask.png" if n == 1 \
                        else f"{base}_frame{frame}_{cls}_mask.png"
@@ -150,7 +150,7 @@ def generate_contours(base, polygons_per_channel, channels, class_ids):
     :type class_ids: dict[str, int]
     :rtype: None
     """
-    contours_dir = HFinder_folders.get_contours_dir()
+    contours_dir = HF_folders.get_contours_dir()
 
     for ch_name, polygons in polygons_per_channel.items():
         channel = channels[ch_name]
@@ -172,7 +172,7 @@ def generate_contours(base, polygons_per_channel, channels, class_ids):
                 ).reshape((-1, 1, 2))
 
                 # Choose color (fixed for publication, random for exploration)
-                if HFinder_settings.get("publication"):
+                if HF_settings.get("publication"):
                     color = (255, 0, 255)
                 else:
                     color = tuple(random.randint(10, 255) for _ in range(3))
@@ -183,7 +183,7 @@ def generate_contours(base, polygons_per_channel, channels, class_ids):
                 alpha = 0.3
                 overlay = cv2.addWeighted(overlay_copy, alpha, overlay, 1 - alpha, 0)
                 cv2.polylines(overlay, [pts], isClosed=True, color=color, thickness=1)
-                if not HFinder_settings.get("publication"):
+                if not HF_settings.get("publication"):
                     white = (255, 255, 255)
                     cv2.putText(
                         overlay, class_name, (10, 20),
@@ -217,20 +217,20 @@ def generate_dataset(base, n, c, channels, polygons_per_channel):
     :type polygons_per_channel: dict[int, list[tuple[str, list[list[float]]]]]
     :rtype: None
     """
-    img_dir = HFinder_folders.get_image_train_dir()
-    lbl_dir = HFinder_folders.get_label_train_dir()
+    img_dir = HF_folders.get_image_train_dir()
+    lbl_dir = HF_folders.get_label_train_dir()
 
-    class_ids = HFinder_settings.load_class_definitions()
+    class_ids = HF_settings.load_class_definitions()
 
     annotated_channels = {ch for ch, polys in polygons_per_channel.items() if polys}
     all_channels = set(channels.keys())
 
-    if HFinder_settings.get("mode") == "debug":
+    if HF_settings.get("mode") == "debug":
         print(f"polygons_per_channel.keys() = {polygons_per_channel.keys()}, \
                 list(annotated_channels) = {list(annotated_channels)}")
 
     # Iterate over valid channel combinations (per Z-frame if n>1)
-    for combo in HFinder_utils.power_set(annotated_channels, n, c):
+    for combo in HF_utils.power_set(annotated_channels, n, c):
         filename = f"{os.path.splitext(base)[0]}_" + "_".join(map(str, combo)) + ".jpg"
         
         # Never use annotated channels as noise (even if not in the current combo)
@@ -247,14 +247,14 @@ def generate_dataset(base, n, c, channels, polygons_per_channel):
         num_noise = np.random.randint(0, len(noise_candidates) + 1)
         noise_channels = random.sample(noise_candidates, num_noise) if num_noise > 0 else []
 
-        if HFinder_settings.get("mode") == "debug":
+        if HF_settings.get("mode") == "debug":
             print(f"Image {base}, combo = {combo}, \
                     noise_channels = {noise_channels}, \
                     noise_candidates = {noise_candidates}")
 
         # Compose hue-fused RGB and save
-        palette = HFinder_palette.get_random_palette(hash_data=filename)
-        img_rgb = HFinder_ImageOps.compose_hue_fusion(
+        palette = HF_palette.get_random_palette(hash_data=filename)
+        img_rgb = HF_ImageOps.compose_hue_fusion(
             channels, combo, palette, noise_channels=noise_channels
         )
         img_path = os.path.join(img_dir, filename)
@@ -264,7 +264,7 @@ def generate_dataset(base, n, c, channels, polygons_per_channel):
         annotations = list(chain.from_iterable(polygons_per_channel.get(ch, []) for ch in combo))
         if annotations:
             label_path = os.path.join(lbl_dir, os.path.splitext(filename)[0] + ".txt")
-            HFinder_utils.save_yolo_segmentation_label(label_path, annotations, class_ids)
+            HF_utils.save_yolo_segmentation_label(label_path, annotations, class_ids)
 
 
 
@@ -311,15 +311,15 @@ def split_train_val():
     from glob import glob
     from collections import defaultdict, Counter
 
-    img_dir = HFinder_folders.get_image_train_dir()
-    lbl_dir = HFinder_folders.get_label_train_dir()
-    img_val_dir = HFinder_folders.get_image_val_dir()
-    lbl_val_dir = HFinder_folders.get_label_val_dir()
+    img_dir = HF_folders.get_image_train_dir()
+    lbl_dir = HF_folders.get_label_train_dir()
+    img_val_dir = HF_folders.get_image_val_dir()
+    lbl_val_dir = HF_folders.get_label_val_dir()
 
     # --- 1) Discover images and group them by their originating TIFF ----------
     image_paths = sorted(glob(os.path.join(img_dir, "*.jpg")))
     if not image_paths:
-        HFinder_log.warn("No training images found to split")
+        HF_log.warn("No training images found to split")
         return
 
     # Regex: remove the trailing "_<num>[_<num>]*" (channel combo),
@@ -349,7 +349,7 @@ def split_train_val():
             label_name = os.path.splitext(img_name)[0] + ".txt"
             lp = os.path.join(lbl_dir, label_name)
             if not os.path.isfile(lp):
-                HFinder_log.warn(f"Missing label for {img_name}; skipping in stats")
+                HF_log.warn(f"Missing label for {img_name}; skipping in stats")
                 continue
             with open(lp, "r") as f:
                 for line in f:
@@ -368,7 +368,7 @@ def split_train_val():
         total_images += len(imgs)
 
     # --- 3) Compute targets for validation ------------------------------------
-    frac = float(HFinder_settings.get("validation_frac") or 0.2)
+    frac = float(HF_settings.get("validation_frac") or 0.2)
     target_images = max(1, int(round(total_images * frac)))  # approximate budget
     target_per_class = {k: v * frac for (k, v) in total_class_counts.items()}
 
@@ -425,7 +425,7 @@ def split_train_val():
                 if os.path.isfile(lp):
                     shutil.move(lp, dst_lbl)
                 else:
-                    HFinder_log.warn(f"Label missing for {img_name}; moved image only")
+                    HF_log.warn(f"Label missing for {img_name}; moved image only")
 
     # Ensure destinations exist (they should, but be defensive)
     os.makedirs(img_val_dir, exist_ok=True)
@@ -434,7 +434,7 @@ def split_train_val():
     move_group(val_groups, img_val_dir, lbl_val_dir)
     # train_groups remain in-place under images/labels/train
 
-    HFinder_log.info(
+    HF_log.info(
         f"Split complete: {len(val_groups)} TIFF groups → val "
         f"({cur_images} images, target ≈ {target_images}); "
         f"{len(train_groups)} groups remain in train."
@@ -480,11 +480,11 @@ def max_intensity_projection_multichannel(img_name, base, stack, polygons_per_ch
         cv2.resize(mip[ch], (0, 0), fx=ratio, fy=ratio, interpolation=cv2.INTER_AREA)
         for ch in range(c)
     ]
-    size = HFinder_settings.get("size")
+    size = HF_settings.get("size")
     assert (stacked_channels[0].shape == (size, size))
 
-    masks_dir = HFinder_folders.get_masks_dir()
-    contours_dir = HFinder_folders.get_contours_dir()
+    masks_dir = HF_folders.get_masks_dir()
+    contours_dir = HF_folders.get_contours_dir()
 
     # For each channel of the MIP, merge polygons from all Z-slices
     polygons_per_stacked_channel = defaultdict(list)
@@ -496,7 +496,7 @@ def max_intensity_projection_multichannel(img_name, base, stack, polygons_per_ch
         polygons_subset = [polygons_per_channel.get(idx, []) for idx in indices]
 
         # Build a fused mask per class from all Z-slice polygons
-        allowed_items = [(x, y) for x, y in class_ids.items() if HFinder_ImageInfo.allows_MIP_generation(x)]
+        allowed_items = [(x, y) for x, y in class_ids.items() if HF_ImageInfo.allows_MIP_generation(x)]
         for class_name, class_id in allowed_items:
             # Accumulate polygons (pixel coords) for this class across slices
             all_polys_px = []
@@ -509,7 +509,7 @@ def max_intensity_projection_multichannel(img_name, base, stack, polygons_per_ch
                         if not flat: 
                             continue
                         # Convert normalized flat polygon to pixel coordinates
-                        pts = HFinder_geometry.flat_to_pts_xy(flat)   # (N, 2)
+                        pts = HF_geometry.flat_to_pts_xy(flat)   # (N, 2)
                         if pts.shape[0] >= 3:
                             all_polys_px.append(pts)
 
@@ -521,13 +521,13 @@ def max_intensity_projection_multichannel(img_name, base, stack, polygons_per_ch
             mask = np.zeros((size, size), dtype=np.uint8)
             cv2.fillPoly(mask, all_polys_px, 255)
 
-            clean_mask = HFinder_segmentation.noise_and_gaps(mask)
+            clean_mask = HF_segmentation.noise_and_gaps(mask)
             # Persist the fused class mask (for QA or reuse)
             mask_path = os.path.join(masks_dir, f"{base}_MIP_{class_name}_mask.png")
             cv2.imwrite(mask_path, clean_mask)
             # Extract refined contours and convert to YOLO polygons
-            final_contours = HFinder_segmentation.mask_to_polygons(clean_mask)
-            yolo_polygons = HFinder_geometry.contours_to_yolo_polygons(final_contours)
+            final_contours = HF_segmentation.mask_to_polygons(clean_mask)
+            yolo_polygons = HF_geometry.contours_to_yolo_polygons(final_contours)
  
             ch_key = ch + 1   # 1-based
             polygons_per_stacked_channel[ch_key].append((class_name, yolo_polygons))
@@ -566,29 +566,29 @@ def generate_training_dataset():
 
     :rtype: None
     """
-    data_dir = HFinder_settings.get("tiff_dir")
+    data_dir = HF_settings.get("tiff_dir")
     image_paths = sorted(glob(os.path.join(data_dir, "*.tif")))
     
-    class_ids = HFinder_settings.load_class_definitions()
-    HFinder_utils.write_yolo_yaml(class_ids)
-    HFinder_ImageInfo.initialize()
+    class_ids = HF_settings.load_class_definitions()
+    HF_utils.write_yolo_yaml(class_ids)
+    HF_ImageInfo.initialize()
 
     for img_path in image_paths:
         img_name = os.path.basename(img_path)
-        HFinder_ImageInfo.set_current_image(img_name)
-        img_base = HFinder_ImageInfo.get_current_base()
+        HF_ImageInfo.set_current_image(img_name)
+        img_base = HF_ImageInfo.get_current_base()
 
-        if not HFinder_ImageInfo.image_has_instructions():
-            HFinder_log.warn(f"Skipping file {img_name} - no annotations")
+        if not HF_ImageInfo.image_has_instructions():
+            HF_log.warn(f"Skipping file {img_name} - no annotations")
             continue
 
         img = tifffile.imread(img_path)
-        if not HFinder_ImageOps.is_valid_image_format(img):
-            HFinder_log.warn(f"Skipping file {img_name}, wrong shape {img.shape}")
+        if not HF_ImageOps.is_valid_image_format(img):
+            HF_log.warn(f"Skipping file {img_name}, wrong shape {img.shape}")
             continue
 
         # Resize channels to the configured size; get ratio and (n, c)
-        channels, ratio, (n, c) = HFinder_ImageOps.resize_multichannel_image(img)   
+        channels, ratio, (n, c) = HF_ImageOps.resize_multichannel_image(img)   
         polygons_per_channel = prepare_class_inputs(channels, n, c, ratio)
         
         # QA overlays then dataset generation

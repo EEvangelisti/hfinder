@@ -35,8 +35,8 @@ Notes
 import os
 import json
 from glob import glob
-from hfinder.core import hfinder_log as HFinder_log
-from hfinder.core import hfinder_settings as HFinder_settings
+from hfinder.core import hf_log as HF_log
+from hfinder.core import hf_settings as HF_settings
 
 # Name of the image currently being processed by the pipeline.
 CURRENT_IMAGE = None
@@ -86,10 +86,10 @@ def initialize():
     """
     
     # Locate the classes directory from settings and validate it.
-    tiff_dir = HFinder_settings.get("tiff_dir")
+    tiff_dir = HF_settings.get("tiff_dir")
     class_dir = os.path.join(tiff_dir, "hf_classes")
     if not os.path.isdir(class_dir):
-        HFinder_log.fail(f"No such directory: {class_dir}", exit_code=4)
+        HF_log.fail(f"No such directory: {class_dir}", exit_code=4)
 
     # Gather all class definition files and derive class names from filenames.
     class_files = sorted(glob(os.path.join(class_dir, "*.json")))
@@ -125,8 +125,8 @@ def initialize():
                 per_class_maps[class_name][img] = val
             else:
                 # Invalid structure for this image/class.
-                HFinder_log.fail(f"Invalid annotation for image {img} in class {class_name}",
-                                 exit_code=HFinder_log.EXIT_INVALID_ANNOTATION)
+                HF_log.fail(f"Invalid annotation for image {img} in class {class_name}",
+                                 exit_code=HF_log.EXIT_INVALID_ANNOTATION)
 
     # ----------------------------------------------------------------------
     # Step 2: merge into an image-wise mapping
@@ -163,7 +163,7 @@ def set_current_image(img_name):
     """
     global CURRENT_IMAGE
     CURRENT_IMAGE = img_name
-    HFinder_log.info(f"Processing {img_name}")
+    HF_log.info(f"Processing {img_name}")
 
 
 def set_current_class(cls_name):
@@ -248,7 +248,7 @@ def is_hidden_channel(n):
 
     :rtype: bool
     """
-    assert n > 0, f"HFinder_ImageInfo.is_hidden_channel({n})"
+    assert n > 0, f"HF_ImageInfo.is_hidden_channel({n})"
     assert CURRENT_IMAGE is not None, "CURRENT_IMAGE not initialized"
     assert HIDDEN_CHANNELS is not None, "HIDDEN_CHANNELS not initialized"
     try:
@@ -274,7 +274,7 @@ def get_current_base():
 
     :rtype: str
     """
-    assert CURRENT_IMAGE is not None, "HFinder_ImageInfo.get_current_base"
+    assert CURRENT_IMAGE is not None, "HF_ImageInfo.get_current_base"
     return os.path.splitext(CURRENT_IMAGE)[0]
 
 

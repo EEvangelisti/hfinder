@@ -5,7 +5,7 @@ This module manages global configuration settings for the HFinder pipeline.
 
 Overview
 --------
-- Load settings from a JSON file (`hfinder_settings.json`) into a global
+- Load settings from a JSON file (`hf_settings.json`) into a global
   `SETTINGS` dictionary.
 - Normalize types (via `pydoc.locate`) and defaults at import time.
 - Provide helpers to:
@@ -22,7 +22,7 @@ Public API
 - load(args): Apply parsed CLI arguments into SETTINGS (with type coercion).
 - get(key): Retrieve the effective value for a setting (supports indirection).
 - set(key, value, replace=True): Update/insert a setting value.
-- print_summary(): Log the current effective settings via HFinder_log.
+- print_summary(): Log the current effective settings via HF_log.
 
 Notes
 -----
@@ -40,8 +40,8 @@ import ast
 import json
 import pydoc
 import importlib.resources as ir
-from hfinder.core import hfinder_log as HFinder_log
-from hfinder.core import hfinder_utils as HFinder_utils
+from hfinder.core import hf_log as HF_log
+from hfinder.core import hf_utils as HF_utils
 from glob import glob
 
     
@@ -50,7 +50,7 @@ from glob import glob
 # `"float"`, `"tuple"`, `"str"`), and converted automatically upon loading. 
 # Booleans must be given as strings `"true"` / `"false"`.
 
-SETTINGS = HFinder_utils.load_argument_list("hfinder_settings.json") or {}
+SETTINGS = HF_utils.load_argument_list("hf_settings.json") or {}
 
 
 # Normalize entries: resolve types, register long-name indirections, and
@@ -230,7 +230,7 @@ def print_summary():
         if isinstance(SETTINGS[key], dict):
             if compatible_modes(SETTINGS[key]['mode'], SETTINGS["running_mode"]):
                 value = False if "default" not in SETTINGS[key]["config"] else SETTINGS[key]["config"]['default']
-                HFinder_log.info(f"[SETTING] '{SETTINGS[key]['long']}' = {value}")
+                HF_log.info(f"[SETTING] '{SETTINGS[key]['long']}' = {value}")
 
 
 
@@ -246,7 +246,7 @@ def load_class_definitions():
     """
     class_dir = os.path.join(get("tiff_dir"), "hf_classes")
     if not os.path.isdir(class_dir):
-        HFinder_log.fail(f"No such directory: {class_dir}")
+        HF_log.fail(f"No such directory: {class_dir}")
 
     files = sorted(glob(os.path.join(class_dir, "*.json")))
     names = [os.path.splitext(os.path.basename(f))[0] for f in files]
