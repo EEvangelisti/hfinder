@@ -19,7 +19,7 @@ See the [Installation guide](INSTALL.md) for detailed instructions
 
 
 
-## Running
+## Command-line usage
 
 After installation, HFinder provides a command-line interface.  
 Run it with the following syntax:
