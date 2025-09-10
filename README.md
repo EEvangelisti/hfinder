@@ -39,18 +39,11 @@ custom datasets, making it immediately usable yet fully adaptable.
 
 ## Installation
 
-### Dependencies
-To run HFinder, you need to install the following dependencies:
-- The YAML library [pyyaml](https://pypi.org/project/PyYAML/)
-- The Python YOLO interface [ultralytics](https://docs.ultralytics.com/fr/quickstart/)
-- The TIFF library [tifffile](https://pypi.org/project/tifffile/)
-- The Python image processing library [scikit-image](https://scikit-image.org/)
+HFinder is distributed as a Python package and can be installed with `pip`.
 
-You can do so by running:
-```
-pip install pyyaml ultralytics tifffile scikit-image
-```
-It is recommended to use a [virtual environment](https://docs.python.org/3/library/venv.html).
+See the [Installation guide](INSTALL.md) for detailed instructions
+(including GPU/CPU support).
+
 
 ### Running
 You can then run HFinder as follows:
