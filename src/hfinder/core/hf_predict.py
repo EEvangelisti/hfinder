@@ -35,7 +35,7 @@ from collections import defaultdict, Counter
 from ultralytics import YOLO
 
 from hfinder.core import hf_log as HF_log
-from hfinder.core import hf_folders as HF_folders
+from hfinder.session import folders as HF_folders
 from hfinder.session import settings as HF_settings
 from hfinder.image import processing as HF_ImageOps
 from hfinder.core import hf_palette as HF_palette

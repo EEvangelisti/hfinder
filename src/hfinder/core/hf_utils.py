@@ -29,7 +29,7 @@ import numpy as np
 import importlib.resources as ir
 from itertools import combinations
 from hfinder.core import hf_log as HF_log
-from hfinder.core import hf_folders as HF_folders
+from hfinder.session import folders as HF_folders
 
 
 
