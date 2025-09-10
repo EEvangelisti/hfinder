@@ -28,8 +28,8 @@ import yaml
 import numpy as np
 import importlib.resources as ir
 from itertools import combinations
-import hfinder.core.hfinder_log as HFinder_log
-import hfinder.core.hfinder_folders as HFinder_folders
+from hfinder.core import hfinder_log as HFinder_log
+from hfinder.core import hfinder_folders as HFinder_folders
 
 
 

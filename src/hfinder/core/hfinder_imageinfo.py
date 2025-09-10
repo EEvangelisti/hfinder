@@ -35,8 +35,8 @@ Notes
 import os
 import json
 from glob import glob
-import hfinder.core.hfinder_log as HFinder_log
-import hfinder.core.hfinder_settings as HFinder_settings
+from hfinder.core import hfinder_log as HFinder_log
+from hfinder.core import hfinder_settings as HFinder_settings
 
 # Name of the image currently being processed by the pipeline.
 CURRENT_IMAGE = None

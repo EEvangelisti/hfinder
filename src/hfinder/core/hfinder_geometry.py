@@ -21,7 +21,7 @@ Notes
 """
 
 import numpy as np
-import hfinder.core.hfinder_settings as HFinder_settings
+from hfinder.core import hfinder_settings as HFinder_settings
 
 
 
