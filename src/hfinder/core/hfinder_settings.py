@@ -39,18 +39,20 @@ import sys
 import ast
 import json
 import pydoc
+import importlib.resources as ir
 import hfinder.core.hfinder_log as HFinder_log
 
+
+    
 # Each setting is defined by a short name, a long name, a type, a default value,
 # and an optional mode. Types are given as Python dotted strings (e.g. `"int"`, 
 # `"float"`, `"tuple"`, `"str"`), and converted automatically upon loading. 
 # Booleans must be given as strings `"true"` / `"false"`.
-PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
 SETTINGS = {}
 
 # Load raw settings from JSON.
-settings_file = os.path.join(PROJECT_ROOT, "sources", "hfinder_settings.json")
-with open(settings_file, "r") as f:
+with ir.files("hfinder.data").joinpath("hfinder_settings.json").open("r", encoding="utf-8") as f:
     SETTINGS = json.load(f)
 
 # Normalize entries: resolve types, register long-name indirections, and
