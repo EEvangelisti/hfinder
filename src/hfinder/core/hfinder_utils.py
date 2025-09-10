@@ -50,6 +50,26 @@ def load_argument_list(filename):
 
 
 
+def string_to_typefun(type_str):
+    """
+    Convert a string to a Python type function usable in argparse.
+
+    :param type_str: Name of the type as a string (e.g. "int", "float", "str").
+    :type type_str: str
+    :return: The corresponding Python callable (e.g. int, float, str),
+             or the input unchanged if not recognized.
+    :rtype: callable
+    """
+    TYPE_MAP = {
+        "int": int,
+        "float": float,
+        "str": str,
+        "bool": bool
+    }
+    return TYPE_MAP.get(type_str, type_str)
+
+
+
 def redirect_all_output(log_path):
     """
     Redirect both stdout and stderr to a specified log file.
