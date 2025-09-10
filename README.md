@@ -35,7 +35,7 @@ where action can be `preprocess`, `train`, or `predict`.
 |`predict`|Detects instances and generates polygons for the specified classes.|
 
 
-### `hfinder train`: training mode
+### Training mode
 
 Use training mode if you want to train HFinder to recognize additional structures.  
 For step-by-step instructions, see [Training guide](doc/training.md).
@@ -44,7 +44,7 @@ You can download the official training dataset from Zenodo:
 [![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.1234567.svg)](https://doi.org/10.5281/zenodo.17091805)
 
 
-### `hfinder predict`: prediction mode
+### Prediction mode
 
 Use prediction mode to run inference with HFinder.
 
