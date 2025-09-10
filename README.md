@@ -48,7 +48,7 @@ You can download the official training dataset from Zenodo:
 
 ### Prediction mode
 
-Use prediction mode to run inference with HFinder.
+Use prediction mode to run inference with HFinder.  
 For step-by-step instructions, see [Prediction guide](doc/prediction.md).
 
 A pre-trained model is required:
