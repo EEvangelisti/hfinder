@@ -43,7 +43,7 @@ from itertools import chain
 from collections import defaultdict
 from matplotlib.colors import Normalize
 from PIL import Image, ImageDraw, ImageFont, ImageOps
-from hfinder.core import hf_utils as HF_utils
+from hfinder.core import utils as HF_utils
 
 DEFAULT_COLOR = (0, 255, 255)
 ALPHA30 = int(0.30 * 255)

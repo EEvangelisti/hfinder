@@ -28,7 +28,7 @@ from pathlib import Path
 from itertools import chain
 from collections import defaultdict
 from PIL import Image, ImageDraw
-from hfinder.core import hf_utils as HF_utils
+from hfinder.core import utils as HF_utils
 
 SETTINGS = None
 ARGLIST =  HF_utils.load_argument_list("annot2signal.arglist.json") or {}

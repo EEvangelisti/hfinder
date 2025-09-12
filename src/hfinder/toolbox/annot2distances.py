@@ -46,7 +46,7 @@ from typing import Iterable, Tuple, List, Dict, Optional
 import numpy as np
 import tifffile
 from PIL import Image, ImageDraw, ImageFont
-from hfinder.core import hf_utils as HF_utils
+from hfinder.core import utils as HF_utils
 
 SETTINGS = None
 ARGLIST = HF_utils.load_argument_list("annot2distances.arglist.json") or {}
