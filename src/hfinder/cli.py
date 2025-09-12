@@ -1,7 +1,7 @@
 import sys
 
 def main() -> int:
-    from hfinder.core.hfinder import main as _main
+    from hfinder.main.main import main as _main
     return _main()
 
 def annot2images() -> int:
