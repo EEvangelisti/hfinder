@@ -18,3 +18,5 @@ dependencies = [
 [project.scripts]
 hfinder = "hfinder.cli:main"
 annot2images = "hfinder.cli:annot2images"
+annot2signal = "hfinder.cli:annot2signal"
+annot2distances = "hfinder.cli:annot2distances"
