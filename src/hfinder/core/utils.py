@@ -22,6 +22,7 @@ Notes
 """
 
 import os
+import re
 import sys
 import json
 import yaml
@@ -29,6 +30,19 @@ import numpy as np
 import importlib.resources as ir
 from itertools import combinations
 from hfinder.core import log as HF_log
+
+
+
+def sanitize(name):
+    """
+    Sanitize a string for safe use as a filename.
+
+    :param name: Raw input string
+    :type name: str
+    :return: Sanitized string with only alphanumerics, dot, dash, underscore
+    :rtype: str
+    """
+    return re.sub(r"[^A-Za-z0-9+._-]+", "_", name)
 
 
 

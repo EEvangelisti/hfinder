@@ -18,7 +18,6 @@ Usage example:
 """
 
 import os
-import re
 import json
 import numpy as np
 import tifffile
@@ -32,19 +31,6 @@ from hfinder.core import utils as HF_utils
 
 SETTINGS = None
 ARGLIST =  HF_utils.load_argument_list("annot2signal.arglist.json") or {}
-
-
-
-def sanitize(name):
-    """
-    Sanitize a string for safe use as a filename.
-
-    :param name: Raw input string
-    :type name: str
-    :return: Sanitized string with only alphanumerics, dot, dash, underscore
-    :rtype: str
-    """
-    return re.sub(r"[^A-Za-z0-9+._-]+", "_", name)
 
 
 
@@ -216,7 +202,7 @@ def main():
         )
     )
 
-    cat_tag = sanitize(str(SETTINGS.category))
+    cat_tag = HF_utils.sanitize(str(SETTINGS.category))
     out_tsv = Path(SETTINGS.output_dir) / f"values_{cat_tag}.tsv"
     with open(out_tsv, "w") as f:
         f.write("Filename\tClass\tX\tY\tMean\n")
