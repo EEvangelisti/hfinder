@@ -38,7 +38,7 @@ from hfinder.core import log as HF_log
 from hfinder.session import folders as HF_folders
 from hfinder.session import settings as HF_settings
 from hfinder.image import processing as HF_ImageOps
-from hfinder.core import hf_palette as HF_palette
+from hfinder.core import palette as HF_palette
 from hfinder.core import utils as HF_utils
 
 

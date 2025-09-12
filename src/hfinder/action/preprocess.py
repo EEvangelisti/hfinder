@@ -48,15 +48,13 @@ from itertools import chain
 from collections import defaultdict
 from hfinder.core import log as HF_log
 from hfinder.core import utils as HF_utils
-from hfinder.core import hf_palette as HF_palette
-from hfinder.core import hf_imageinfo as HF_ImageInfo
+from hfinder.core import palette as HF_palette
+from hfinder.core import geometry as HF_geometry
+from hfinder.image import processing as HF_ImageOps
+from hfinder.image import segmentation as HF_segmentation
+from hfinder.session import current as HF_ImageInfo
 from hfinder.session import folders as HF_folders
 from hfinder.session import settings as HF_settings
-from hfinder.image import processing as HF_ImageOps
-from hfinder.core import hf_geometry as HF_geometry
-from hfinder.core import hf_segmentation as HF_segmentation
-
-
 
 
 
