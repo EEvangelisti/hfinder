@@ -28,7 +28,7 @@ import numpy as np
 from PIL import Image
 from matplotlib.colors import hsv_to_rgb
 from hfinder.core import log as HF_log
-from hfinder.core import hf_palette as HF_palette
+from hfinder.core import palette as HF_palette
 from hfinder.session import settings as HF_settings
 from hfinder.session import current as HF_ImageInfo
 
