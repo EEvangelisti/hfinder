@@ -49,7 +49,7 @@ Notes
 import os
 import yaml
 from datetime import datetime
-from hfinder.core import hf_log as HF_log
+from hfinder.core import log as HF_log
 
 
 # In-memory description of the session folder tree.
