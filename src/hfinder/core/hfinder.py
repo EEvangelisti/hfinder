@@ -1,9 +1,9 @@
 import argparse
 from hfinder.core import log as HF_log
-from hfinder.core import hf_train as HF_train
 from hfinder.core import hf_dataset as HF_dataset
+from hfinder.action import train as HF_train
+from hfinder.action import predict as HF_predict
 from hfinder.session import folders as HF_folders
-from hfinder.core import hf_predict as HF_predict
 from hfinder.session import settings as HF_settings
 
 
