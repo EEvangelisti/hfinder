@@ -366,7 +366,7 @@ def run():
     yaml_path = HF_settings.get("yaml")
     if not os.path.isfile(yaml_path):
         HF_log.fail(f"YAML file not found: {yaml_path}")
-    class_ids = HF_settings.load_class_definitions_from_yaml(yaml_path)  # {"name": id}
+    class_ids = HF_utils.load_class_definitions_from_yaml(yaml_path)  # {"name": id}
     id_to_name = {v: k for k, v in class_ids.items()}
 
     try:
