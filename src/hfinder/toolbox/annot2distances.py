@@ -1,9 +1,4 @@
-#!/usr/bin/env python3
-# -*- coding: utf-8 -*-
-
 """
-json2distances.py
-
 Compute distances between annotated structures in confocal TIFF images and
 export visualization overlays with a hue-based composite that avoids saturation.
 

@@ -1,9 +1,4 @@
-#!/usr/bin/env python3
-# -*- coding: utf-8 -*-
-
 """
-annot2signal.py
-
 This script extracts per-polygon signal intensities from TIFF images using YOLO/COCO-style annotations. 
 For each object polygon, it computes the centroid coordinates and mean signal intensity, 
 optionally from a different channel than the detection channel (via --signal). 
