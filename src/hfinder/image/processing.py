@@ -30,7 +30,7 @@ from matplotlib.colors import hsv_to_rgb
 from hfinder.core import log as HF_log
 from hfinder.core import hf_palette as HF_palette
 from hfinder.session import settings as HF_settings
-from hfinder.core import hf_imageinfo as HF_ImageInfo
+from hfinder.session import current as HF_ImageInfo
 
 
 
