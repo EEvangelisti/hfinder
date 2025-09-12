@@ -35,7 +35,7 @@ Notes
 import os
 import json
 from glob import glob
-from hfinder.core import hf_log as HF_log
+from hfinder.core import log as HF_log
 from hfinder.session import settings as HF_settings
 
 # Name of the image currently being processed by the pipeline.

@@ -23,7 +23,7 @@ Notes
 import hashlib
 import colorsys
 import numpy as np
-from hfinder.core import hf_log as HF_log
+from hfinder.core import log as HF_log
 
 
 

@@ -28,7 +28,7 @@ import yaml
 import numpy as np
 import importlib.resources as ir
 from itertools import combinations
-from hfinder.core import hf_log as HF_log
+from hfinder.core import log as HF_log
 
 
 

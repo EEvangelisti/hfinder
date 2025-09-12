@@ -49,7 +49,7 @@ from skimage.feature import peak_local_max
 from skimage.morphology import binary_closing
 from skimage.morphology import remove_small_holes
 from skimage.morphology import remove_small_objects
-from hfinder.core import hf_log as HF_log
+from hfinder.core import log as HF_log
 from hfinder.session import folders as HF_folders
 from hfinder.session import settings as HF_settings
 from hfinder.core import hf_geometry as HF_geometry

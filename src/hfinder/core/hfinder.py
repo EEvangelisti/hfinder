@@ -1,5 +1,5 @@
 import argparse
-from hfinder.core import hf_log as HF_log
+from hfinder.core import log as HF_log
 from hfinder.core import hf_train as HF_train
 from hfinder.core import hf_dataset as HF_dataset
 from hfinder.session import folders as HF_folders
