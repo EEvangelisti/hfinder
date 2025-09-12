@@ -1,8 +1,8 @@
 import argparse
 from hfinder.core import log as HF_log
-from hfinder.core import hf_dataset as HF_dataset
 from hfinder.action import train as HF_train
 from hfinder.action import predict as HF_predict
+from hfinder.action import preprocess as HF_preprocess
 from hfinder.session import folders as HF_folders
 from hfinder.session import settings as HF_settings
 
@@ -13,7 +13,7 @@ def preprocess(args=None):
         HF_settings.set("running_mode", "preprocess")
     HF_settings.print_summary()
     HF_folders.create_session_folders()
-    HF_dataset.generate_training_dataset()
+    HF_preprocess.generate_training_dataset()
 
 
 def train(args):
