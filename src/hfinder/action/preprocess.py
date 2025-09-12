@@ -47,7 +47,7 @@ from glob import glob
 from itertools import chain
 from collections import defaultdict
 from hfinder.core import log as HF_log
-from hfinder.core import hf_utils as HF_utils
+from hfinder.core import utils as HF_utils
 from hfinder.core import hf_palette as HF_palette
 from hfinder.core import hf_imageinfo as HF_ImageInfo
 from hfinder.session import folders as HF_folders

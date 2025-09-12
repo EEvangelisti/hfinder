@@ -23,7 +23,7 @@ import os
 import torch
 from ultralytics import YOLO
 from hfinder.core import log as HF_log
-from hfinder.core import hf_utils as HF_utils
+from hfinder.core import utils as HF_utils
 from hfinder.session import folders as HF_folders
 from hfinder.session import settings as HF_settings
 
