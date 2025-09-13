@@ -41,10 +41,11 @@ from typing import Iterable, Tuple, List, Dict, Optional
 import numpy as np
 import tifffile
 from PIL import Image, ImageDraw, ImageFont
-from hfinder.core import utils as HF_utils
+from hfinder.core import utils as hUtils
+from hfinder.image import processing as hProcess
 
 SETTINGS = None
-ARGLIST = HF_utils.load_argument_list("annot2distances.arglist.json") or {}
+ARGLIST = hUtils.load_argument_list("annot2distances.arglist.json") or {}
 
 
 
@@ -63,7 +64,7 @@ def parse_arguments():
         if "default" in config:
             config["help"] = f"{config['help']} (default: {config['default']})"
         if "type" in config:
-            config["type"] = HF_utils.string_to_typefun(config["type"])
+            config["type"] = hUtils.string_to_typefun(config["type"])
         ap.add_argument(short, param["long"], **config)
     global SETTINGS 
     SETTINGS = ap.parse_args()
@@ -98,53 +99,6 @@ def load_all_coco_for_base(base: str, coco_dir: str | Path) -> tuple[list[dict],
 
 
 # ----------------------------- Image helpers ----------------------------- #
-
-def extract_frame(arr: np.ndarray, ch: int = 0, z: int = 0) -> np.ndarray:
-    """
-    Return a 2D plane (H,W) from an array shaped (C,H,W) or (Z,C,H,W).
-
-    :param arr: Image array.
-    :type arr: np.ndarray
-    :param ch: Channel index (0-based).
-    :type ch: int
-    :param z: Z index if present.
-    :type z: int
-    :return: 2D frame.
-    :rtype: np.ndarray
-    :raises ValueError: If shape unsupported or indices out of range.
-    """
-    if arr.ndim == 2:
-        return arr
-    if arr.ndim == 3:
-        C, H, W = arr.shape
-        if not (0 <= ch < C):
-            raise ValueError(f"Channel {ch} out of range for shape {arr.shape}")
-        return arr[ch]
-    if arr.ndim == 4:
-        Z, C, H, W = arr.shape
-        if not (0 <= z < Z):
-            raise ValueError(f"Z {z} out of range for shape {arr.shape}")
-        if not (0 <= ch < C):
-            raise ValueError(f"Channel {ch} out of range for shape {arr.shape}")
-        return arr[z, ch]
-    raise ValueError(f"Unsupported image shape {arr.shape}; expected (C,H,W) or (Z,C,H,W).")
-
-
-def normalize_to_unit(frame: np.ndarray) -> np.ndarray:
-    """
-    Normalize a frame to [0,1] as float32 (robust min–max).
-
-    :param frame: 2D array (any dtype).
-    :type frame: np.ndarray
-    :return: Float frame in [0,1].
-    :rtype: np.ndarray
-    """
-    a = frame.astype(np.float32, copy=False)
-    vmin, vmax = float(np.min(a)), float(np.max(a))
-    if vmax <= vmin:
-        return np.zeros_like(a, dtype=np.float32)
-    return (a - vmin) / (vmax - vmin)
-
 
 def hsv_composite_from_channels(arr: np.ndarray,
                                 hues_deg: list[float] | tuple[float, ...] | np.ndarray,
@@ -191,7 +145,7 @@ def hsv_composite_from_channels(arr: np.ndarray,
     for k, p in enumerate(planes_src):
         if p.ndim != 2:
             raise ValueError(f"Selected plane at index {k} is not 2D: got shape {p.shape}")
-        planes.append(normalize_to_unit(p))
+        planes.append(hProcess.normalize_channel(p, mode="float"))
 
     H, W = planes[0].shape
     Csel = len(planes)

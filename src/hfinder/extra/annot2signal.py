@@ -22,10 +22,11 @@ from pathlib import Path
 from itertools import chain
 from collections import defaultdict
 from PIL import Image, ImageDraw
-from hfinder.core import utils as HF_utils
+from hfinder.core import utils as hUtils
+from hfinder.image import processing as hProcess
 
 SETTINGS = None
-ARGLIST =  HF_utils.load_argument_list("annot2signal.arglist.json") or {}
+ARGLIST =  hUtils.load_argument_list("annot2signal.arglist.json") or {}
 
 
 
@@ -59,38 +60,6 @@ def load_coco_json(base, category, coco_dir):
         anns.extend(d.get("annotations", []))
 
     return anns, id_to_name
-
-
-
-def extract_frame(arr, ch = 0, z = 0):
-    """
-    Extract a 2D frame (H,W) from TIFF data.
-
-    :param arr: TIFF array with shape (C,H,W) or (Z,C,H,W)
-    :type arr: np.ndarray
-    :param ch: Channel index (0-based)
-    :type ch: int
-    :param z: Z-slice index if 4D
-    :type z: int
-    :return: 2D image frame
-    :rtype: np.ndarray
-    :raises ValueError: If channel or z index are out of range
-    """
-    if arr.ndim == 2:
-        return arr
-    if arr.ndim == 3:
-        C, H, W = arr.shape
-        if not (0 <= ch < C):
-            raise ValueError(f"Channel {ch} out of range [0,{C-1}] for shape {arr.shape}")
-        return arr[ch, :, :]
-    if arr.ndim == 4:
-        Z, C, H, W = arr.shape
-        if not (0 <= z < Z):
-            raise ValueError(f"Z {z} out of range [0,{Z-1}] for shape {arr.shape}")
-        if not (0 <= ch < C):
-            raise ValueError(f"Channel {ch} out of range [0,{C-1}] for shape {arr.shape}")
-        return arr[z, ch, :, :]
-    raise ValueError(f"Unsupported image shape {arr.shape}; expected (C,H,W) or (Z,C,H,W).")
 
 
 
@@ -197,7 +166,7 @@ def main():
         )
     )
 
-    cat_tag = HF_utils.sanitize(str(SETTINGS.category))
+    cat_tag = hUtils.sanitize(str(SETTINGS.category))
     out_tsv = Path(SETTINGS.output_dir) / f"values_{cat_tag}.tsv"
     with open(out_tsv, "w") as f:
         f.write("Filename\tClass\tX\tY\tMean\n")
@@ -247,7 +216,7 @@ def main():
                     signal_ch = int(SETTINGS.signal)
                     if not (0 <= signal_ch < arr.shape[-3 if arr.ndim == 4 else -3+1]):
                         raise ValueError(f"   ❌ Signal channel {signal_ch} out of bounds for shape {arr.shape}")
-                frame = extract_frame(arr, ch=signal_ch)
+                frame = hProcess.extract_frame(arr, ch=signal_ch, norm=None)
            
                 #union_mask = np.zeros((H, W), dtype=bool)
                 for i, segs in enumerate(poly_list):

@@ -39,16 +39,18 @@ from itertools import chain
 from collections import defaultdict
 from matplotlib.colors import Normalize
 from PIL import Image, ImageDraw, ImageFont, ImageOps
-from hfinder.core import utils as HF_utils
-from hfinder.core import palette as HF_palette
-from hfinder.core import geometry as HF_geometry
-from hfinder.image import processing as HF_ImageOps
+from hfinder.core import utils as hUtils
+from hfinder.core import palette as hColor
+from hfinder.core import geometry as hGeom
+from hfinder.image import processing as hProcess
+
+
 
 DEFAULT_COLOR = (0, 255, 255)
 ALPHA30 = int(0.30 * 255)
 SETTINGS = None
 
-ARGLIST = HF_utils.load_argument_list("annot2images.arglist.json") or {}
+ARGLIST = hUtils.load_argument_list("annot2images.arglist.json") or {}
 
 
 
@@ -133,7 +135,7 @@ def draw_annotation(img, bbox_xyxy, segs, label, color, stroke, composite_mode=F
     draw = ImageDraw.Draw(img)
     
     if bbox_xyxy is not None:
-        x1, y1, x2, y2 = HF_geometry.clamp_box_xyxy(bbox_xyxy, W, H)
+        x1, y1, x2, y2 = hGeom.clamp_box_xyxy(bbox_xyxy, W, H)
         if (composite_mode and SETTINGS.composite_boxes) or SETTINGS.boxes:
             draw.rectangle([x1, y1, x2, y2], outline=color, width=stroke)
 
@@ -210,48 +212,6 @@ def parse_arguments():
 
 
 
-def extract_frame(tif, ch=0, z=0):
-    """
-    Return a 2D plane (H, W) from an array shaped (C, H, W) or (Z, C, H, W).
-
-    Selection rules:
-      - (C, H, W): select channel ``ch`` (default 0).
-      - (Z, C, H, W): select slice ``z`` (default 0) and channel ``ch`` (default 0).
-
-    :param tif: Image array.
-    :type tif: numpy.ndarray
-    :param ch: Channel index to select (defaults to 0 if None).
-    :type ch: int | None
-    :param z: Z index to select (only used when Z is present; defaults to 0 if None).
-    :type z: int | None
-    :returns: 2D image plane as (H, W).
-    :rtype: numpy.ndarray
-    :raises ValueError: If the array does not match (C,H,W) or (Z,C,H,W), or if indices are out of bounds.
-    """
-
-    if tif.ndim == 2:
-        return tif
-
-    if tif.ndim == 3:
-        C, H, W = tif.shape
-        if not (0 <= ch < C):
-            raise ValueError(f"Channel index {ch} out of range [0, {C-1}] for shape {tif.shape}.")
-        return tif[ch, :, :]
-
-    if tif.ndim == 4:
-        Z, C, H, W = tif.shape
-        if not (0 <= z < Z):
-            raise ValueError(f"Z index {z} out of range [0, {Z-1}] for shape {tif.shape}.")
-        if not (0 <= ch // Z < C): # FIXME: is is correct for Z stacks?
-            raise ValueError(f"Channel index {ch} out of range [0, {C-1}] for shape {tif.shape}.")
-        return tif[z, ch // Z, :, :] # FIXME: is is correct for Z stacks?
-
-    raise ValueError(
-        f"Unsupported image shape {tif.shape}; expected (C,H,W) or (Z,C,H,W)."
-    )
-
-
-
 def parse_palette_arg(arg):
     """Try to interpret a palette argument string as dict, hex color, or name."""
     # Tenter un dict
@@ -284,14 +244,14 @@ def resolve_palette(palette):
         out = {}
         for cls, col in palette.items():
             try:
-                out[cls] = HF_palette.to_uint8_rgb(col)
+                out[cls] = hColor.to_uint8_rgb(col)
             except Exception:
                 out[cls] = DEFAULT_COLOR
         return out
 
     if isinstance(palette, str) and palette.startswith("#"):
         try:
-            return HF_palette.to_uint8_rgb(palette)
+            return hColor.to_uint8_rgb(palette)
         except Exception:
             return DEFAULT
 
@@ -328,14 +288,14 @@ def build_background_image(tif, used_channels, mode="black"):
     frames = []
     for ch in sorted(used_channels):
         try:
-            frame = HF_ImageOps.normalize_to_uint8(extract_frame(tif, ch=ch))
+            frame = hProcess.extract_frame(tif, ch=ch)
             frames.append(frame.astype(np.float32))
         except Exception:
             continue
 
     if not frames:
         # Repli si rien n'est exploitable: premier canal
-        frame = HF_ImageOps.normalize_to_uint8(extract_frame(tif, ch=0))
+        frame = hProcess.extract_frame(tif, ch=0)
         return ImageOps.grayscale(Image.fromarray(frame)).convert("RGB")
 
     stack = np.stack(frames, axis=0)  # [C, H, W]
@@ -474,7 +434,7 @@ def main():
         for (cid, ch), cat_anns in sorted(by_cat_ch.items()):
             cls_name = id_to_name.get(cid, f"class_{cid}")
             if ch not in planes:
-                frame = HF_ImageOps.normalize_to_uint8(extract_frame(tif, ch=ch))
+                frame = hProcess.extract_frame(tif, ch=ch)
                 planes[ch] = ImageOps.grayscale(Image.fromarray(frame)).convert("RGB")
             canvas = planes[ch].copy()
 
@@ -507,7 +467,7 @@ def main():
                     stroke=stroke
                 )
 
-            out_name = f"{base}_{HF_utils.sanitize(cls_name)}_ch{ch}.png"
+            out_name = f"{base}_{hUtils.sanitize(cls_name)}_ch{ch}.png"
             canvas.save(Path(SETTINGS.out_dir) / out_name)
             print(f"   ✅ Saving '{out_name}'")
 
