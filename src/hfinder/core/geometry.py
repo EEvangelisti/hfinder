@@ -24,6 +24,35 @@ import numpy as np
 from hfinder.session import settings as HF_settings
 
 
+def is_valid_image_format(img):
+    """
+    Check whether a NumPy array corresponds to a valid multi-channel or 
+    z/t-stack image.
+
+    Supported formats:
+        - 3D multi-channel image: shape (C, H, W)
+        - 4D z/t-stack: shape (Z, C, H, W)
+
+    Constraints:
+        - Fewer than 10 channels (C < 10)
+        - Spatial dimensions strictly greater than 64×64
+
+    :param img: Input image array.
+    :type img: np.ndarray
+    :return: True if the format is supported, False otherwise.
+    :rtype: bool
+    """
+    valid_ndim = False
+    if img.ndim == 4:
+        valid_ndim = True
+        _, c, h, w = img.shape
+    elif img.ndim == 3:
+        valid_ndim = True
+        c, h, w = img.shape
+    # Check dimensional validity, channel limit, and spatial size threshold
+    return valid_ndim and c < 10 and h > 64 and w > 64
+
+
 
 def clamp_box_xyxy(box, W, H):
     """
