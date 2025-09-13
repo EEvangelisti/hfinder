@@ -40,48 +40,14 @@ from collections import defaultdict
 from matplotlib.colors import Normalize
 from PIL import Image, ImageDraw, ImageFont, ImageOps
 from hfinder.core import utils as HF_utils
+from hfinder.core import geometry as HF_geometry
+from hfinder.image import processing as HF_ImageOps
 
 DEFAULT_COLOR = (0, 255, 255)
 ALPHA30 = int(0.30 * 255)
 SETTINGS = None
 
 ARGLIST = HF_utils.load_argument_list("annot2images.arglist.json") or {}
-
-
-
-def sanitize(name):
-    """
-    Make a filesystem-friendly token from an arbitrary string.
-
-    Replaces any character outside ``[A-Za-z0-9+._-]`` with an underscore.
-
-    :param name: Raw string to sanitize.
-    :type name: str
-    :returns: Sanitized string safe for filenames.
-    :rtype: str
-    """
-    return re.sub(r"[^A-Za-z0-9+._-]+", "_", name)
-
-
-
-def clamp_box_xyxy(box, W, H):
-    """
-    Clamp an axis-aligned box to image bounds in (x1, y1, x2, y2) form.
-
-    :param box: Box coordinates ``[x1, y1, x2, y2]`` (can be floats).
-    :type box: list | tuple
-    :param W: Image width in pixels.
-    :type W: int
-    :param H: Image height in pixels.
-    :type H: int
-    :returns: Clamped box ``[x1, y1, x2, y2]`` within ``[0..W-1] × [0..H-1]``.
-    :rtype: list[int]
-    """
-    x1, y1, x2, y2 = box
-    return [int(max(0, min(x1, W-1))),
-            int(max(0, min(y1, H-1))),
-            int(max(0, min(x2, W-1))),
-            int(max(0, min(y2, H-1)))]
 
 
 
@@ -117,32 +83,7 @@ def load_all_coco_for_base(base, coco_dir):
         anns.extend(d.get("annotations", []))
     return anns, id_to_name
 
-
-
-def normalize_to_uint8(arr):
-    """
-    Normalize an image array to uint8 (0–255) for display/export.
-
-    - If dtype is already uint8 → returned as-is.
-    - If dtype is uint16/float → scaled to [0,255] based on min–max.
-    - If max == min → flat image filled with zeros.
-
-    :param arr: Input 2D image (H, W).
-    :type arr: numpy.ndarray
-    :returns: Normalized 8-bit image.
-    :rtype: numpy.ndarray
-    """
-    if arr.dtype == np.uint8:
-        return arr
-
-    arr = arr.astype(np.float32, copy=False)
-    vmin, vmax = float(arr.min()), float(arr.max())
-    if vmax > vmin:
-        arr = (arr - vmin) / (vmax - vmin) * 255.0
-    else:
-        arr = np.zeros_like(arr, dtype=np.float32)
-    return arr.astype(np.uint8)
-    
+   
 
 def _split_poly_by_jumps(seg, max_jump=10.0):
     """Découpe un seg (liste [x0,y0,x1,y1,...]) en sous-polygones
@@ -191,7 +132,7 @@ def draw_annotation(img, bbox_xyxy, segs, label, color, stroke, composite_mode=F
     draw = ImageDraw.Draw(img)
     
     if bbox_xyxy is not None:
-        x1, y1, x2, y2 = clamp_box_xyxy(bbox_xyxy, W, H)
+        x1, y1, x2, y2 = HF_geometry.clamp_box_xyxy(bbox_xyxy, W, H)
         if (composite_mode and SETTINGS.composite_boxes) or SETTINGS.boxes:
             draw.rectangle([x1, y1, x2, y2], outline=color, width=stroke)
 
@@ -406,14 +347,14 @@ def build_background_image(tif, used_channels, mode="black"):
     frames = []
     for ch in sorted(used_channels):
         try:
-            frame = normalize_to_uint8(extract_frame(tif, ch=ch))
+            frame = HF_ImageOps.normalize_to_uint8(extract_frame(tif, ch=ch))
             frames.append(frame.astype(np.float32))
         except Exception:
             continue
 
     if not frames:
         # Repli si rien n'est exploitable: premier canal
-        frame = normalize_to_uint8(extract_frame(tif, ch=0))
+        frame = HF_ImageOps.normalize_to_uint8(extract_frame(tif, ch=0))
         return ImageOps.grayscale(Image.fromarray(frame)).convert("RGB")
 
     stack = np.stack(frames, axis=0)  # [C, H, W]
@@ -552,7 +493,7 @@ def main():
         for (cid, ch), cat_anns in sorted(by_cat_ch.items()):
             cls_name = id_to_name.get(cid, f"class_{cid}")
             if ch not in planes:
-                frame = normalize_to_uint8(extract_frame(tif, ch=ch))
+                frame = HF_ImageOps.normalize_to_uint8(extract_frame(tif, ch=ch))
                 planes[ch] = ImageOps.grayscale(Image.fromarray(frame)).convert("RGB")
             canvas = planes[ch].copy()
 
@@ -585,7 +526,7 @@ def main():
                     stroke=stroke
                 )
 
-            out_name = f"{base}_{sanitize(cls_name)}_ch{ch}.png"
+            out_name = f"{base}_{HF_utils.sanitize(cls_name)}_ch{ch}.png"
             canvas.save(Path(SETTINGS.out_dir) / out_name)
             print(f"   ✅ Saving '{out_name}'")
 
