@@ -24,9 +24,9 @@ Notes
 """
 
 import cv2
+import matplotlib
 import numpy as np
 from PIL import Image
-from matplotlib.colors import hsv_to_rgb
 from hfinder.core import log as HF_log
 from hfinder.core import palette as HF_palette
 from hfinder.session import settings as HF_settings
@@ -34,33 +34,79 @@ from hfinder.session import current as HF_ImageInfo
 
 
 
-def is_valid_image_format(img):
+def normalize_channel(arr: np.ndarray, mode: str = "uint8") -> np.ndarray:
     """
-    Check whether a NumPy array corresponds to a valid multi-channel or 
-    z/t-stack image.
+    Normalize a single-channel image array.
 
-    Supported formats:
-        - 3D multi-channel image: shape (C, H, W)
-        - 4D z/t-stack: shape (Z, C, H, W)
-
-    Constraints:
-        - Fewer than 10 channels (C < 10)
-        - Spatial dimensions strictly greater than 64×64
-
-    :param img: Input image array.
-    :type img: np.ndarray
-    :return: True if the format is supported, False otherwise.
-    :rtype: bool
+    :param arr: Input 2D image.
+    :type arr: np.ndarray
+    :param mode: Normalization mode:
+        - "float": scale to [0.0, 1.0] as float32
+        - "uint8": scale to [0, 255] as uint8 (default mode)
+        - "none": return unchanged if already compatible
+    :type mode: str
+    :return: Normalized array according to mode.
+    :rtype: np.ndarray
+    :raises ValueError: If mode is unsupported.
     """
-    valid_ndim = False
-    if img.ndim == 4:
-        valid_ndim = True
-        _, c, h, w = img.shape
+    if mode == "uint8" and arr.dtype == np.uint8:
+        return arr
+    if mode == "float" and arr.dtype == np.float32 and arr.min() >= 0.0 and arr.max() <= 1.0:
+        return arr
+
+    a = arr.astype(np.float32, copy=False)
+    vmin, vmax = float(a.min()), float(a.max())
+
+    if vmax <= vmin:
+        a = np.zeros_like(a, dtype=np.float32)
+    else:
+        a = (a - vmin) / (vmax - vmin)
+
+    if mode == "float":
+        return a
+    elif mode == "uint8":
+        return (a * 255.0).astype(np.uint8)
+    elif mode == "none":
+        return arr
+    else:
+        raise ValueError(f"Unsupported mode: {mode}")
+
+
+
+
+def extract_frame(img, ch=0, z=0, norm=normalize_channel):
+    """
+    Return a 2D plane (H, W) from an array shaped (C, H, W) or (Z, C, H, W).
+
+    Selection rules:
+      - (C, H, W): select channel ``ch`` (default 0).
+      - (Z, C, H, W): select slice ``z`` (default 0) and channel ``ch`` (default 0).
+
+    :param img: Image array.
+    :type img: numpy.ndarray
+    :param ch: Channel index to select (defaults to 0 if None).
+    :type ch: int | None
+    :param z: Z index to select (only used when Z is present; defaults to 0 if None).
+    :type z: int | None
+    :returns: 2D image plane as (H, W).
+    :rtype: numpy.ndarray
+    :raises ValueError: If the array does not match (C,H,W) or (Z,C,H,W).
+    :raises AssertionError: If indices are out of bounds.
+    """
+    norm = (lambda x: x) if norm is None else norm
+    if img.ndim == 2:
+        return norm(img)
     elif img.ndim == 3:
-        valid_ndim = True
-        c, h, w = img.shape
-    # Check dimensional validity, channel limit, and spatial size threshold
-    return valid_ndim and c < 10 and h > 64 and w > 64
+        C, H, W = img.shape
+        assert (0 <= ch < C), f"Channel index {ch} out of range [0, {C-1}] for shape {img.shape}."
+        return norm(img[ch, :, :])
+    elif img.ndim == 4:
+        Z, C, H, W = img.shape
+        assert (0 <= z < Z), f"Z index {z} out of range [0, {Z-1}] for shape {img.shape}."
+        assert (0 <= ch // Z < C), f"Channel index {ch} out of range [0, {C-1}] for shape {img.shape}."
+        return norm(img[z, ch // Z, :, :])
+    else:
+        raise ValueError(f"Unsupported shape {img.shape}; expected (C, H, W) or (Z, C, H, W).")
 
 
 
@@ -113,32 +159,6 @@ def resize_multichannel_image(img):
 
 
 
-def normalize_to_uint8(arr):
-    """
-    Normalize an image array to uint8 (0–255) for display/export.
-
-    - If dtype is already uint8 → returned as-is.
-    - If dtype is uint16/float → scaled to [0,255] based on min–max.
-    - If max == min → flat image filled with zeros.
-
-    :param arr: Input 2D image (H, W).
-    :type arr: numpy.ndarray
-    :returns: Normalized 8-bit image.
-    :rtype: numpy.ndarray
-    """
-    if arr.dtype == np.uint8:
-        return arr
-
-    arr = arr.astype(np.float32, copy=False)
-    vmin, vmax = float(arr.min()), float(arr.max())
-    if vmax > vmin:
-        arr = (arr - vmin) / (vmax - vmin) * 255.0
-    else:
-        arr = np.zeros_like(arr, dtype=np.float32)
-    return arr.astype(np.uint8)
-
-
-
 def save_gray_as_rgb(channel, out_path, normalize=True):
     """
     Save a single-channel image as an RGB grayscale JPEG.
@@ -188,7 +208,7 @@ def colorize_with_hue(frame, hue):
     v = norm                     # intensity from original frame
 
     hsv = np.stack([h, s, v], axis=-1)
-    rgb = hsv_to_rgb(hsv)
+    rgb = matplotlib.colors.hsv_to_rgb(hsv)
     return rgb
 
 
