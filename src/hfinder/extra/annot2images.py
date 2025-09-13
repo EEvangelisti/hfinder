@@ -40,6 +40,7 @@ from collections import defaultdict
 from matplotlib.colors import Normalize
 from PIL import Image, ImageDraw, ImageFont, ImageOps
 from hfinder.core import utils as HF_utils
+from hfinder.core import palette as HF_palette
 from hfinder.core import geometry as HF_geometry
 from hfinder.image import processing as HF_ImageOps
 
@@ -251,26 +252,6 @@ def extract_frame(tif, ch=0, z=0):
 
 
 
-def hex_to_rgb(s):
-    s = s.lstrip("#")
-    return tuple(int(s[i:i+2], 16) for i in (0, 2, 4))
-
-
-
-def to_uint8_rgb(c):
-    if isinstance(c, str):
-        if c.startswith("#"):
-            return hex_to_rgb(c)
-        r, g, b = to_rgb(c)  # matplotlib gère noms de couleurs
-        return (int(r*255), int(g*255), int(b*255))
-    if isinstance(c, (tuple, list)) and len(c) == 3:
-        if max(c) > 1.0:
-            return tuple(int(v) for v in c)
-        return tuple(int(v*255) for v in c)
-    raise ValueError(f"Unsupported color format: {c}")
-
-
-
 def parse_palette_arg(arg):
     """Try to interpret a palette argument string as dict, hex color, or name."""
     # Tenter un dict
@@ -303,14 +284,14 @@ def resolve_palette(palette):
         out = {}
         for cls, col in palette.items():
             try:
-                out[cls] = to_uint8_rgb(col)
+                out[cls] = HF_palette.to_uint8_rgb(col)
             except Exception:
                 out[cls] = DEFAULT_COLOR
         return out
 
     if isinstance(palette, str) and palette.startswith("#"):
         try:
-            return to_uint8_rgb(palette)
+            return HF_palette.to_uint8_rgb(palette)
         except Exception:
             return DEFAULT
 
