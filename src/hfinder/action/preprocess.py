@@ -581,7 +581,7 @@ def generate_training_dataset():
             continue
 
         img = tifffile.imread(img_path)
-        if not HF_ImageOps.is_valid_image_format(img):
+        if not HF_geometry.is_valid_image_format(img):
             HF_log.warn(f"Skipping file {img_name}, wrong shape {img.shape}")
             continue
 
