@@ -25,6 +25,27 @@ from hfinder.session import settings as HF_settings
 
 
 
+def clamp_box_xyxy(box, W, H):
+    """
+    Clamp an axis-aligned box to image bounds in (x1, y1, x2, y2) form.
+
+    :param box: Box coordinates ``[x1, y1, x2, y2]`` (can be floats).
+    :type box: list | tuple
+    :param W: Image width in pixels.
+    :type W: int
+    :param H: Image height in pixels.
+    :type H: int
+    :returns: Clamped box ``[x1, y1, x2, y2]`` within ``[0..W-1] × [0..H-1]``.
+    :rtype: list[int]
+    """
+    x1, y1, x2, y2 = box
+    return [int(max(0, min(x1, W-1))),
+            int(max(0, min(y1, H-1))),
+            int(max(0, min(x2, W-1))),
+            int(max(0, min(y2, H-1)))]
+
+
+
 def contours_to_yolo_polygons(contours,
                               min_vertices=3,
                               simplify_eps=None,
