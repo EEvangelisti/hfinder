@@ -113,6 +113,32 @@ def resize_multichannel_image(img):
 
 
 
+def normalize_to_uint8(arr):
+    """
+    Normalize an image array to uint8 (0–255) for display/export.
+
+    - If dtype is already uint8 → returned as-is.
+    - If dtype is uint16/float → scaled to [0,255] based on min–max.
+    - If max == min → flat image filled with zeros.
+
+    :param arr: Input 2D image (H, W).
+    :type arr: numpy.ndarray
+    :returns: Normalized 8-bit image.
+    :rtype: numpy.ndarray
+    """
+    if arr.dtype == np.uint8:
+        return arr
+
+    arr = arr.astype(np.float32, copy=False)
+    vmin, vmax = float(arr.min()), float(arr.max())
+    if vmax > vmin:
+        arr = (arr - vmin) / (vmax - vmin) * 255.0
+    else:
+        arr = np.zeros_like(arr, dtype=np.float32)
+    return arr.astype(np.uint8)
+
+
+
 def save_gray_as_rgb(channel, out_path, normalize=True):
     """
     Save a single-channel image as an RGB grayscale JPEG.
