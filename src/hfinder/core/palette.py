@@ -22,6 +22,7 @@ Notes
 
 import hashlib
 import colorsys
+import matplotlib
 import numpy as np
 from hfinder.core import log as HF_log
 
@@ -45,6 +46,31 @@ for i in range(N):
     v = start_hsv[2]
     base_palette_hsv.append((h, s, v))
 # ---------------------------------------------------------------------
+
+
+def to_uint8_rgb(c):
+    """
+    Convert a color specification into an RGB tuple with 8-bit integers (0–255).
+
+    The input can be:
+      - A hex string (e.g. "#FFA500")
+      - A named color string recognized by matplotlib (e.g. "orange")
+      - A 3-element tuple of floats in [0, 1] (e.g. (1.0, 0.65, 0.0))
+
+    :param c: Color specification as a string or a tuple.
+    :type c: str | tuple[float, float, float]
+    :return: RGB color tuple with integer values between 0 and 255.
+    :rtype: tuple[int, int, int]
+    :raises ValueError: If the color format is not supported.
+    """
+    if isinstance(c, str):
+        if c.startswith("#"):
+            return tuple(int(c[i:i+2], 16) for i in (1, 3, 5))
+        r, g, b = matplotlib.colors.to_rgb(c)
+        return (int(r * 255), int(g * 255), int(b * 255))
+    if isinstance(c, tuple) and len(c) == 3:
+        return tuple(int(v * 255) for v in c)
+    raise ValueError(f"Unsupported color format: {c}")
 
 
 
