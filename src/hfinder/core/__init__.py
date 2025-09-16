@@ -36,7 +36,8 @@ from .geometry import (
     is_valid_image_format,
     clamp_box_xyxy,
     contours_to_yolo_polygons,
-    flat_to_pts_xy
+    flat_to_pts_xy,
+    bbox_xyxy_to_xywh
 )
 
 __all__ = [
@@ -55,5 +56,6 @@ __all__ = [
     "is_valid_image_format",
     "clamp_box_xyxy",
     "contours_to_yolo_polygons",
-    "flat_to_pts_xy"
+    "flat_to_pts_xy",
+    "bbox_xyxy_to_xywh"
 ]

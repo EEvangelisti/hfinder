@@ -186,3 +186,22 @@ def flat_to_pts_xy(flat):
     r = HF_settings.get("size")
     pts = [(int(flat[i] * r), int(flat[i+1] * r)) for i in range(0, len(flat), 2)]
     return np.asarray(pts, dtype=np.int32)
+    
+
+
+def bbox_xyxy_to_xywh(b):
+    """
+    Compute the area (in pixels²) of a bounding box [x1, y1, x2, y2].
+
+    The result is max(0, x2−x1) * max(0, y2−y1), ensuring a non-negative area
+    even if coordinates are partially inverted.
+
+    :param b: Bounding box in xyxy format.
+    :type b: list[float] | np.ndarray
+    :return: Non-negative box area in pixel units.
+    :rtype: float
+    """
+    x1, y1, x2, y2 = map(float, b)
+    return [x1, y1, max(0.0, x2 - x1), max(0.0, y2 - y1)]
+    
+    
