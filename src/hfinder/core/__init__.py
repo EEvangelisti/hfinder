@@ -40,7 +40,8 @@ from .geometry import (
     bbox_xyxy_to_xywh,
     rescale_box_xyxy,
     rescale_seg_flat,
-    poly_area_xy
+    poly_area_xy,
+    polys_from_xy
 )
 
 __all__ = [
@@ -63,5 +64,6 @@ __all__ = [
     "bbox_xyxy_to_xywh",
     "rescale_box_xyxy",
     "rescale_seg_flat",
-    "poly_area_xy"
+    "poly_area_xy",
+    "polys_from_xy"
 ]

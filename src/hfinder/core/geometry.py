@@ -265,3 +265,35 @@ def poly_area_xy(poly):
     y = [p[1] for p in pts]
     return 0.5 * abs(sum(x[i] * y[(i + 1) % len(pts)] - 
            x[(i + 1) % len(pts)] * y[i] for i in range(len(pts))))
+
+
+
+def polys_from_xy(inst_xy):
+    """
+    Convert YOLO mask polygon(s) into COCO-style flattened lists.
+
+    A YOLO result may store instance polygons either as:
+      - a single (N,2) numpy array of x,y coordinates, or
+      - a list of such arrays (for multiple disjoint polygons).
+
+    This function normalizes the input into a list of flattened
+    [x1, y1, x2, y2, ..., xn, yn] lists.
+
+    :param inst_xy: A (N,2) array or list of arrays with polygon vertices.
+    :type inst_xy: numpy.ndarray | list[numpy.ndarray] | None
+    :return: A list of polygons, each represented as a flattened list of floats.
+    :rtype: list[list[float]]
+    """
+    if inst_xy is None:
+        return []
+    polys = inst_xy if isinstance(inst_xy, (list, tuple)) else [inst_xy]
+    flats = []
+    for poly in polys:
+        arr = np.asarray(poly)
+        if arr.ndim != 2 or arr.shape[0] < 3:
+            continue
+        flats.append(arr.reshape(-1).tolist())
+    return flats
+
+
+       
