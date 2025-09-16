@@ -154,27 +154,6 @@ def coco_skeleton(categories):
 
 
 
-def poly_area_xy(poly):
-    """
-    Compute the polygon area (in pixels²) from a flattened [x1, y1, x2, y2, ...] list.
-    Uses the shoelace formula. Degenerate inputs (fewer than 3 points) return 0.0.
-
-    :param poly: Flattened polygon coordinates [x1, y1, x2, y2, ...].
-    :type poly: list[float] | np.ndarray
-    :return: Non-negative polygon area in pixel units.
-    :rtype: float
-    """
-    if not poly or len(poly) < 6: 
-        return 0.0
-    it = iter(poly)
-    pts = [(float(x), float(next(it))) for x in it]
-    x = [p[0] for p in pts]
-    y = [p[1] for p in pts]
-    return 0.5 * abs(sum(x[i] * y[(i + 1) % len(pts)] - 
-           x[(i + 1) % len(pts)] * y[i] for i in range(len(pts))))
-
-
-
 def polys_from_xy(inst_xy):
     """
     Convert YOLO mask polygon(s) into COCO-style flattened lists.
@@ -230,47 +209,6 @@ def polys_from_mask_i(result_obj, i):
             continue
         flats.append(c.reshape(-1, 2).astype(float).reshape(-1).tolist())
     return flats
-
-
-
-def rescale_box_xyxy(box, scale_factor):
-    """
-    Rescale a bounding box from resized space back to original space.
-
-    This function takes a bounding box in [x1, y1, x2, y2] format (resized space)
-    and multiplies all values by the scale factor. The result is a bounding box
-    expressed in the original TIFF coordinate system.
-
-    :param box: Bounding box coordinates [x1, y1, x2, y2].
-    :type box: list[float] | tuple[float, float, float, float]
-    :param scale_factor: Factor to convert from resized to original coordinates
-                         (usually 1.0 / resize_ratio).
-    :type scale_factor: float
-    :return: Rescaled bounding box in original coordinates.
-    :rtype: list[float]
-    """
-    return [float(v) * scale_factor for v in box]
-
-
-
-def rescale_seg_flat(seg, scale_factor):
-    """
-    Rescale a flattened polygon segmentation from resized space back to original space.
-
-    This function takes a segmentation polygon represented as a flat list
-    of alternating x and y coordinates, e.g. [x1, y1, x2, y2, ...], and multiplies
-    all values by the scale factor. The result is a polygon expressed in the
-    original TIFF coordinate system.
-
-    :param seg: Flattened polygon segmentation (list of floats).
-    :type seg: list[float]
-    :param scale_factor: Factor to convert from resized to original coordinates
-                         (usually 1.0 / resize_ratio).
-    :type scale_factor: float
-    :return: Rescaled polygon segmentation in original coordinates.
-    :rtype: list[float]
-    """
-    return [float(v) * scale_factor for v in seg]
 
 
 
@@ -532,8 +470,8 @@ def run():
                 rescaled.append({
                     "cls": int(d["cls"]),
                     "conf": float(d["conf"]),
-                    "xyxy": rescale_box_xyxy(d["xyxy"], scale_factor),
-                    "segs": [rescale_seg_flat(seg, scale_factor) for seg in (d.get("segs") or [])],
+                    "xyxy": HGeom.rescale_box_xyxy(d["xyxy"], scale_factor),
+                    "segs": [HGeom.rescale_seg_flat(seg, scale_factor) for seg in (d.get("segs") or [])],
                     # optionally keep provenance:
                     # "channels": d.get("channels", []),
                     # "channel": ch,
@@ -554,7 +492,7 @@ def run():
             for d in rescaled:
                 bbox_xywh = HGeom.bbox_xyxy_to_xywh(d["xyxy"])
                 if d["segs"]:
-                    area = float(sum(poly_area_xy(seg) for seg in d["segs"]))
+                    area = float(sum(HGeom.poly_area_xy(seg) for seg in d["segs"]))
                     segmentation = d["segs"]
                 else:
                     area = float(bbox_xywh[2] * bbox_xywh[3])
