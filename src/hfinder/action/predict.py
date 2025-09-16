@@ -37,6 +37,7 @@ from ultralytics import YOLO
 from hfinder.core import log as HLog
 from hfinder.core import utils as HUtils
 from hfinder.core import palette as HPalette
+from hfinder.core import geometry as HGeom
 from hfinder.image import processing as HImageOps
 from hfinder.session import folders as HFolders
 from hfinder.session import settings as HSettings
@@ -171,23 +172,6 @@ def poly_area_xy(poly):
     y = [p[1] for p in pts]
     return 0.5 * abs(sum(x[i] * y[(i + 1) % len(pts)] - 
            x[(i + 1) % len(pts)] * y[i] for i in range(len(pts))))
-
-
-
-def bbox_xyxy_to_xywh(b):
-    """
-    Compute the area (in pixels²) of a bounding box [x1, y1, x2, y2].
-
-    The result is max(0, x2−x1) * max(0, y2−y1), ensuring a non-negative area
-    even if coordinates are partially inverted.
-
-    :param b: Bounding box in xyxy format.
-    :type b: list[float] | np.ndarray
-    :return: Non-negative box area in pixel units.
-    :rtype: float
-    """
-    x1, y1, x2, y2 = map(float, b)
-    return [x1, y1, max(0.0, x2 - x1), max(0.0, y2 - y1)]
 
 
 
@@ -345,18 +329,6 @@ def _get_model():
     if not os.path.exists(model):
         HLog.fail(f"Model file not found: {model}")
     return YOLO(model)
-
-def _get_tiffs():
-    if not input_folder or not os.path.isdir(input_folder):
-        HLog.fail(f"Invalid directory: {input_folder}")
-    tifs = os.path.join(input_folder, "*.tif")
-    tiffs = os.path.join(input_folder, "*.tiff")
-    image_list = sorted(glob(tifs) + glob(tiffs))
-    if not image_list:
-        HLog.warn(f"No TIFF files found in {input_folder}")
-        return None
-    return image_list
-
 
 
 
@@ -580,7 +552,7 @@ def run():
             # ---- annotations
             ann_id = 1
             for d in rescaled:
-                bbox_xywh = bbox_xyxy_to_xywh(d["xyxy"])
+                bbox_xywh = HGeom.bbox_xyxy_to_xywh(d["xyxy"])
                 if d["segs"]:
                     area = float(sum(poly_area_xy(seg) for seg in d["segs"]))
                     segmentation = d["segs"]
