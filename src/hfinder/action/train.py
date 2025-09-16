@@ -8,13 +8,13 @@ This module provides a thin wrapper around Ultralytics' YOLO training API to:
 
 Public API
 ----------
-- run(**kwargs): Train a YOLO model using settings from HF_settings, writing
+- run(**kwargs): Train a YOLO model using settings from HSettings, writing
   logs to the current session's log directory.
 
 Notes
 -----
-- Output redirection is handled by hf_utils.redirect_all_output() /
-  hf_utils.restore_output(). If training raises, the finally block restores
+- Output redirection is handled by HUtils.redirect_all_output() /
+  HUtils.restore_output(). If training raises, the finally block restores
   the original file descriptors.
 """
 
@@ -22,10 +22,10 @@ import gc
 import os
 import torch
 from ultralytics import YOLO
-from hfinder.core import log as HF_log
-from hfinder.core import utils as HF_utils
-from hfinder.session import folders as HF_folders
-from hfinder.session import settings as HF_settings
+from hfinder.core import log as HLog
+from hfinder.core import utils as HUtils
+from hfinder.session import folders as HFolders
+from hfinder.session import settings as HSettings
 
 
 
@@ -34,8 +34,8 @@ def run(**kwargs):
     Train a YOLOv8 model using Ultralytics with project-specific settings.
 
     This function:
-      - Retrieves the model path, epochs, and image size from HF_settings.
-      - Resolves dataset YAML and output directories via HF_folders.
+      - Retrieves the model path, epochs, and image size from HSettings.
+      - Resolves dataset YAML and output directories via HFolders.
       - Redirects all output (stdout and stderr) to a session log file.
       - Invokes `YOLO.train()` with defaults and user-provided overrides.
       - Restores original output streams on exit.
@@ -48,14 +48,14 @@ def run(**kwargs):
     """
     
     # Resolve paths and settings.
-    yaml = os.path.join(HF_folders.get_dataset_dir(), "dataset.yaml")
-    model = HF_settings.get("model")
-    epochs = HF_settings.get("epochs")
-    HF_log.info(f"Training YOLOv8 for {epochs} epochs with model {model}")
+    yaml = os.path.join(HFolders.get_dataset_dir(), "dataset.yaml")
+    model = HSettings.get("model")
+    epochs = HSettings.get("epochs")
+    HLog.info(f"Training YOLOv8 for {epochs} epochs with model {model}")
     
     # Redirect all output to a session log file.
-    log_path = os.path.join(HF_folders.get_log_dir(), "train.log")
-    stdout_fd, stderr_fd = HF_utils.redirect_all_output(log_path)
+    log_path = os.path.join(HFolders.get_log_dir(), "train.log")
+    stdout_fd, stderr_fd = HUtils.redirect_all_output(log_path)
     
     # Free up memory
     gc.collect()
@@ -75,12 +75,12 @@ def run(**kwargs):
         # Initialize model and launch training.       
         yolo = YOLO(model)
         yolo.train(data=yaml,
-                   project=HF_folders.get_runs_dir(),
+                   project=HFolders.get_runs_dir(),
                    epochs=epochs,
-                   imgsz=HF_settings.get("size"),
+                   imgsz=HSettings.get("size"),
                    verbose=False,
                    **kwargs)
     finally:
         # Ensure file descriptors are restored even if training fails.
-        HF_utils.restore_output(stdout_fd, stderr_fd)
+        HUtils.restore_output(stdout_fd, stderr_fd)
 
