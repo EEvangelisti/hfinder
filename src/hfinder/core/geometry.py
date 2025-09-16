@@ -203,5 +203,65 @@ def bbox_xyxy_to_xywh(b):
     """
     x1, y1, x2, y2 = map(float, b)
     return [x1, y1, max(0.0, x2 - x1), max(0.0, y2 - y1)]
-    
-    
+
+
+
+def rescale_box_xyxy(box, scale_factor):
+    """
+    Rescale a bounding box from resized space back to original space.
+
+    This function takes a bounding box in [x1, y1, x2, y2] format (resized space)
+    and multiplies all values by the scale factor. The result is a bounding box
+    expressed in the original TIFF coordinate system.
+
+    :param box: Bounding box coordinates [x1, y1, x2, y2].
+    :type box: list[float] | tuple[float, float, float, float]
+    :param scale_factor: Factor to convert from resized to original coordinates
+                         (usually 1.0 / resize_ratio).
+    :type scale_factor: float
+    :return: Rescaled bounding box in original coordinates.
+    :rtype: list[float]
+    """
+    return [float(v) * scale_factor for v in box]
+
+
+
+def rescale_seg_flat(seg, scale_factor):
+    """
+    Rescale a flattened polygon segmentation from resized space back to original space.
+
+    This function takes a segmentation polygon represented as a flat list
+    of alternating x and y coordinates, e.g. [x1, y1, x2, y2, ...], and multiplies
+    all values by the scale factor. The result is a polygon expressed in the
+    original TIFF coordinate system.
+
+    :param seg: Flattened polygon segmentation (list of floats).
+    :type seg: list[float]
+    :param scale_factor: Factor to convert from resized to original coordinates
+                         (usually 1.0 / resize_ratio).
+    :type scale_factor: float
+    :return: Rescaled polygon segmentation in original coordinates.
+    :rtype: list[float]
+    """
+    return [float(v) * scale_factor for v in seg]
+
+
+
+def poly_area_xy(poly):
+    """
+    Compute the polygon area (in pixels²) from a flattened [x1, y1, x2, y2, ...] list.
+    Uses the shoelace formula. Degenerate inputs (fewer than 3 points) return 0.0.
+
+    :param poly: Flattened polygon coordinates [x1, y1, x2, y2, ...].
+    :type poly: list[float] | np.ndarray
+    :return: Non-negative polygon area in pixel units.
+    :rtype: float
+    """
+    if not poly or len(poly) < 6: 
+        return 0.0
+    it = iter(poly)
+    pts = [(float(x), float(next(it))) for x in it]
+    x = [p[0] for p in pts]
+    y = [p[1] for p in pts]
+    return 0.5 * abs(sum(x[i] * y[(i + 1) % len(pts)] - 
+           x[(i + 1) % len(pts)] * y[i] for i in range(len(pts))))

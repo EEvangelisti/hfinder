@@ -37,7 +37,10 @@ from .geometry import (
     clamp_box_xyxy,
     contours_to_yolo_polygons,
     flat_to_pts_xy,
-    bbox_xyxy_to_xywh
+    bbox_xyxy_to_xywh,
+    rescale_box_xyxy,
+    rescale_seg_flat,
+    poly_area_xy
 )
 
 __all__ = [
@@ -57,5 +60,8 @@ __all__ = [
     "clamp_box_xyxy",
     "contours_to_yolo_polygons",
     "flat_to_pts_xy",
-    "bbox_xyxy_to_xywh"
+    "bbox_xyxy_to_xywh",
+    "rescale_box_xyxy",
+    "rescale_seg_flat",
+    "poly_area_xy"
 ]
