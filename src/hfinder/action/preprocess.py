@@ -40,6 +40,7 @@ import json
 import random
 import shutil
 import tifffile
+import colorsys
 import numpy as np
 import matplotlib.pyplot as plt
 from PIL import Image
@@ -155,6 +156,27 @@ def generate_contours(base, polygons_per_channel, channels, class_ids):
         h, w = channel.shape
         overlay = cv2.cvtColor(channel, cv2.COLOR_GRAY2BGR)
 
+        unique_classes = sorted({cn for cn, _ in polygons})
+        multi_class = len(unique_classes) > 1
+        label_positions = {}
+
+        if multi_class:
+            # Stable palette if class set is the same (order-independent)
+            hsv_palette = HF_palette.get_random_palette(hash_data="|".join(unique_classes))
+
+            def hsv_to_bgr(h, s, v):
+                r, g, b = colorsys.hsv_to_rgb(h, s, v)
+                return (int(r * 255), int(g * 255), int(b * 255))  # OpenCV uses BGR
+
+            # Map each class to a palette color (cycle if more classes than palette size)
+            class_colors = {
+                cn: hsv_to_bgr(*hsv_palette[i % len(hsv_palette)])
+                for i, cn in enumerate(unique_classes)
+            }
+        else:
+            class_colors = None  # fall back to original behavior
+
+
         for class_name, poly in polygons:
             if class_name not in class_ids:
                 continue
@@ -170,10 +192,13 @@ def generate_contours(base, polygons_per_channel, channels, class_ids):
                 ).reshape((-1, 1, 2))
 
                 # Choose color (fixed for publication, random for exploration)
-                if HF_settings.get("publication"):
-                    color = (255, 0, 255)
+                if multi_class:
+                    color = class_colors[class_name]
                 else:
-                    color = tuple(random.randint(10, 255) for _ in range(3))
+                    if HF_settings.get("publication"):
+                        color = (255, 0, 255)
+                    else:
+                        color = tuple(random.randint(10, 255) for _ in range(3))
 
                 overlay_copy = overlay.copy()
                 # Fill on a copy
@@ -181,12 +206,25 @@ def generate_contours(base, polygons_per_channel, channels, class_ids):
                 alpha = 0.3
                 overlay = cv2.addWeighted(overlay_copy, alpha, overlay, 1 - alpha, 0)
                 cv2.polylines(overlay, [pts], isClosed=True, color=color, thickness=1)
-                if not HF_settings.get("publication"):
-                    white = (255, 255, 255)
-                    cv2.putText(
-                        overlay, class_name, (10, 20),
-                        cv2.FONT_HERSHEY_SIMPLEX, 0.5, white, 1
-                    )
+                if multi_class or not HF_settings.get("publication"):
+                    if multi_class:
+                        # Stack class names: one line per class, fixed horizontal position
+                        if class_name not in label_positions:
+                            # Assign next available vertical offset
+                            y_offset = 20 + 20 * len(label_positions)
+                            label_positions[class_name] = y_offset
+
+                        y_pos = label_positions[class_name]
+                        cv2.putText(
+                            overlay, class_name, (10, y_pos),
+                            cv2.FONT_HERSHEY_SIMPLEX, 0.5, color, 1
+                        )
+                    else:
+                        white = (255, 255, 255)
+                        cv2.putText(
+                            overlay, class_name, (10, 20),
+                            cv2.FONT_HERSHEY_SIMPLEX, 0.5, white, 1
+                        )
 
         out_path = os.path.join(contours_dir, f"{base}_{ch_name}_contours.png")
         cv2.imwrite(out_path, overlay)
