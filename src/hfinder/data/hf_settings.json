@@ -118,8 +118,8 @@
         "type": "str",
         "long": "overlay_whitelist",
         "config": {
-            "default": "[]",
-            "help": "JSON list of class-name pairs allowed to overlap, e.g. [[\"haustorium\",\"hypha\"]]."
+            "default": "[(\"haustorium\", \"hypha\")]",
+            "help": "JSON list of class-name pairs allowed to overlap."
         }
     },
     "y": {
