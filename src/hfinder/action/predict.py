@@ -391,11 +391,13 @@ def run():
         for ch, subset, best, best_score, total_score, scores in subset_info:
             if not scores:
                 continue
+            print(f"In channel {ch}, best class is {best}.")
 
             # Sélection robuste avec whitelist : co-dominance autorisée mais jamais séparée
             present = set(scores.keys())  # classes détectées sur CE canal
  
             if best in already_assigned:
+                #print(f"The best class is already assigned.")
                 # Chercher des paires (c,a) telles que :
                 # - c != a
                 # - {c,a} ∈ whitelist_ids
@@ -412,6 +414,8 @@ def run():
             else:
                 # Best est libre : on ajoute le partenaire whitelist SEULEMENT s'il est PRÉSENT
                 partners = {c for c in present if frozenset({c, best}) in whitelist_ids}
+                #print(f"The best class has not been used yet.")
+                #print(f"Will use the following partners: {}")
                 partners &= present  # explicite (déjà vrai), évite toute surprise
                 kept_set = {best} | (partners if partners else set())
  
