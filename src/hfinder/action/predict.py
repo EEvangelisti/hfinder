@@ -391,7 +391,7 @@ def run():
         for ch, subset, best, best_score, total_score, scores in subset_info:
             if not scores:
                 continue
-            print(f"In channel {ch}, best class is {best}.")
+            #print(f"In channel {ch}, best class is {best}.")
 
             # Sélection robuste avec whitelist : co-dominance autorisée mais jamais séparée
             present = set(scores.keys())  # classes détectées sur CE canal
