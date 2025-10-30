@@ -255,7 +255,6 @@ def generate_dataset(base, n, c, channels, polygons_per_channel):
     """
     img_dir = HF_folders.get_image_train_dir()
     lbl_dir = HF_folders.get_label_train_dir()
-
     class_ids = HF_settings.load_class_definitions()
 
     annotated_channels = {ch for ch, polys in polygons_per_channel.items() if polys}
@@ -265,42 +264,20 @@ def generate_dataset(base, n, c, channels, polygons_per_channel):
         print(f"polygons_per_channel.keys() = {polygons_per_channel.keys()}, \
                 list(annotated_channels) = {list(annotated_channels)}")
 
-    # Iterate over valid channel combinations (per Z-frame if n>1)
-    for combo in HF_utils.power_set(annotated_channels, n, c):
-        filename = f"{os.path.splitext(base)[0]}_" + "_".join(map(str, combo)) + ".jpg"
-        
-        # Never use annotated channels as noise (even if not in the current combo)
-        noise_candidates = list(all_channels - set(annotated_channels) - set(combo))
-
-        if n > 1:
-            # Restrict noise to the Z-frame of the combo reference channel
-            ref_ch = min(combo)
-            series_index = (ref_ch - 1) // c
-            allowed_noise = [series_index * c + i + 1 for i in range(c)]
-            noise_candidates = list(set(noise_candidates) & set(allowed_noise))
-
-        # Sample 0..len(noise_candidates) noise channels
-        num_noise = np.random.randint(0, len(noise_candidates) + 1)
-        noise_channels = random.sample(noise_candidates, num_noise) if num_noise > 0 else []
-
-        if HF_settings.get("mode") == "debug":
-            print(f"Image {base}, combo = {combo}, \
-                    noise_channels = {noise_channels}, \
-                    noise_candidates = {noise_candidates}")
-
-        # Compose hue-fused RGB and save
-        palette = HF_palette.get_random_palette(hash_data=filename)
-        img_rgb = HF_ImageOps.compose_hue_fusion(
-            channels, combo, palette, noise_channels=noise_channels
-        )
+    for ch, img2d in channels.items():
+        # 1) Écrire l’image (grayscale → 3 canaux identiques si besoin)
+        filename = f"{os.path.splitext(base)[0]}_c{ch:02d}.jpg"
         img_path = os.path.join(img_dir, filename)
+        if img2d.ndim == 2:
+            img_rgb = np.stack([img2d]*3, axis=-1).astype(np.uint8)
+        else:
+            img_rgb = img2d  # supposé déjà 3 canaux
         Image.fromarray(img_rgb).save(img_path, "JPEG")
 
-        # Flatten annotations for the selected channels and write YOLO labels.
-        annotations = list(chain.from_iterable(polygons_per_channel.get(ch, []) for ch in combo))
-        if annotations:
-            label_path = os.path.join(lbl_dir, os.path.splitext(filename)[0] + ".txt")
-            HF_utils.save_yolo_segmentation_label(label_path, annotations, class_ids)
+        # 2) Écrire les labels (vides si pas d’annotations)
+        annotations = polygons_per_channel.get(ch, [])
+        label_path = os.path.join(lbl_dir, os.path.splitext(filename)[0] + ".txt")
+        HF_utils.save_yolo_segmentation_label(label_path, annotations, class_ids)
 
 
 
