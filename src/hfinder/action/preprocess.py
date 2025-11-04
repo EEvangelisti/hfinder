@@ -290,9 +290,6 @@ def split_train_val(validation_frac=0.2, seed=42):
     img_val_dir  = HF_folders.get_image_val_dir()
     lbl_val_dir  = HF_folders.get_label_val_dir()
 
-    os.makedirs(img_val_dir, exist_ok=True)
-    os.makedirs(lbl_val_dir, exist_ok=True)
-
     img_paths = sorted(glob(os.path.join(img_dir, "*.jpg")))
     if not img_paths:
         HF_log.warn("No training images found to split")
