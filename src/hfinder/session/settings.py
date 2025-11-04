@@ -234,7 +234,7 @@ def print_summary():
 
 
 
-def load_class_definitions():
+def load_class_definitions(keys='class_name'):
     """
     Extract class names from JSON files in `tiff_dir/classes/` and assign IDs.
 
@@ -250,7 +250,10 @@ def load_class_definitions():
 
     files = sorted(glob(os.path.join(class_dir, "*.json")))
     names = [os.path.splitext(os.path.basename(f))[0] for f in files]
-    return {name: i for i, name in enumerate(names)}
-
-
+    if keys == 'id':
+        return {i: name for i, name in enumerate(names)}
+    elif keys == 'class_name':
+        return {name: i for i, name in enumerate(names)}
+    else:
+        return None
 
