@@ -59,6 +59,127 @@ from hfinder.session import settings as HF_settings
 
 
 
+def simplify_flat_polygon(flat, epsilon_rel=0.001, min_points=6):
+    """
+    Simplifie un polygone YOLO (coords normalisées) avec Douglas–Peucker.
+
+    :param flat: [x1, y1, ..., xn, yn] en [0, 1].
+    :param epsilon_rel: fraction de la longueur de périmètre utilisée pour eps.
+    :param min_points: nombre minimum de points à conserver.
+    :return: polygone aplati simplifié, ou original si simplification non pertinente.
+    """
+    if not flat or len(flat) < 2 * min_points:
+        return flat
+
+    pts = np.asarray(flat, dtype=np.float32).reshape(-1, 2)
+    cnt = pts.reshape(-1, 1, 2)
+
+    # longueur en coordonnées normalisées (indépendante de la taille en pixels)
+    peri = cv2.arcLength(cnt, True)
+    if peri <= 0:
+        return flat
+
+    eps = epsilon_rel * peri
+    approx = cv2.approxPolyDP(cnt, eps, True).reshape(-1, 2)
+
+    if approx.shape[0] < min_points:
+        # trop simplifié -> on garde la version d'origine
+        return flat
+
+    return approx.flatten().tolist()
+
+
+
+def resample_flat_polygon(flat, target_points=60):
+    """
+    Répartit les points d’un polygone à intervalles réguliers sur le périmètre.
+
+    :param flat: [x1, y1, ..., xn, yn] (normalisé).
+    :param target_points: nombre de points souhaité (approx.).
+    :return: polygone aplati ré-échantillonné.
+    """
+    if not flat or len(flat) < 6:
+        return flat
+
+    pts = np.asarray(flat, dtype=np.float32).reshape(-1, 2)
+    n = pts.shape[0]
+    if n < 2:
+        return flat
+
+    # on ferme explicitement le polygone
+    pts_closed = np.vstack([pts, pts[0]])
+
+    # distances cumulées le long du contour
+    seg = np.sqrt(((np.diff(pts_closed, axis=0)) ** 2).sum(axis=1))
+    d = np.concatenate([[0.0], np.cumsum(seg)])
+    perimeter = d[-1]
+    if perimeter <= 0:
+        return flat
+
+    # nb de points utile (évite de gonfler un petit contour)
+    K = min(target_points, max(n, 4))
+    step = perimeter / K
+
+    new_pts = []
+    for k in range(K):
+        pos = k * step
+        # position sur la chaîne de segments
+        idx = np.searchsorted(d, pos) - 1
+        if idx < 0:
+            idx = 0
+        if idx >= len(pts):
+            idx = len(pts) - 1
+
+        t_den = d[idx + 1] - d[idx] if (idx + 1 < len(d)) else 1.0
+        if t_den <= 1e-8:
+            t = 0.0
+        else:
+            t = (pos - d[idx]) / t_den
+
+        p = (1.0 - t) * pts_closed[idx] + t * pts_closed[idx + 1]
+        new_pts.append(p)
+
+    new_pts = np.asarray(new_pts, dtype=np.float32)
+    return new_pts.flatten().tolist()
+
+
+# TODO: set these parameters in HF_settings?
+# epsilon_rel : plus grand → contours plus anguleux/moins détaillés.
+# target_points : nombre de points cible par polygone.
+# min_points : seuil en dessous duquel on ne garde pas un polygone.
+def postprocess_polygons(polygons_per_channel,
+                         epsilon_rel=0.001,
+                         target_points=60,
+                         min_points=6):
+    """
+    Applique simplification + ré-échantillonnage à l’ensemble des polygones.
+
+    :param polygons_per_channel: {ch: [(class_name, [flat_polygons...]), ...]}
+    :return: même structure, avec polygones optimisés.
+    """
+    new_map = defaultdict(list)
+
+    for ch, items in polygons_per_channel.items():
+        for class_name, polys in items:
+            new_polys = []
+            for flat in polys:
+                if not flat or len(flat) < 2 * min_points:
+                    continue  # on ignore les minuscules artefacts
+
+                flat_simpl = simplify_flat_polygon(flat,
+                                                   epsilon_rel=epsilon_rel,
+                                                   min_points=min_points)
+                flat_resampled = resample_flat_polygon(flat_simpl,
+                                                       target_points=target_points)
+                new_polys.append(flat_resampled)
+
+            if new_polys:
+                new_map[ch].append((class_name, new_polys))
+
+    return new_map
+
+
+
 def prepare_class_inputs(channels, n, c, ratio):
     """
     Generate segmentation masks and polygon annotations per class, for each
@@ -593,6 +714,14 @@ def generate_training_dataset():
         # Resize channels to the configured size; get ratio and (n, c)
         channels, ratio, (n, c) = HF_ImageOps.resize_multichannel_image(img)   
         polygons_per_channel = prepare_class_inputs(channels, n, c, ratio)
+        
+        # Post-traitement des polygones pour simplifier et homogénéiser les contours
+        polygons_per_channel = postprocess_polygons(
+            polygons_per_channel
+            #epsilon_rel=HF_settings.get("poly_epsilon_rel", 0.001),
+            #target_points=HF_settings.get("poly_target_points", 60),
+            #min_points=HF_settings.get("poly_min_points", 6),
+        )
         
         # QA overlays then dataset generation
         generate_contours(img_base, polygons_per_channel, channels, class_ids)     
