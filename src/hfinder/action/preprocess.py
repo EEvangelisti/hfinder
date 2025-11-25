@@ -1,38 +1,84 @@
 """
-High-level dataset preparation for HFinder.
+High-level dataset preparation pipeline for HFinder.
 
 Overview
 --------
-- Load per-image class instructions and resolve per-channel operations.
-- Threshold or segment channels to produce masks and polygons.
-- Convert masks/contours to YOLOv8-compatible polygon labels.
-- Compose RGB training images via hue-based fusion of channels.
-- Save images/labels to the expected YOLO directory layout.
-- Split images into train/val subsets.
-- Optionally compute and export MIP (Max Intensity Projection) datasets.
+This module orchestrates the full conversion of multichannel TIFF images
+into a YOLOv8-compatible segmentation dataset. Its core responsibilities are:
+
+1.  Load class-specific instructions for the current image
+    (thresholds, channel assignments, optional manual JSON segmentations).
+
+2.  Produce masks and polygonal annotations for each class and channel,
+    using either:
+        - fixed thresholds,
+        - user-provided polygons,
+        - or automatic thresholding.
+
+3.  Convert binary masks and contours into normalized YOLO polygons.
+
+4.  Apply geometric post-processing to all polygons:
+        - contour simplification (Douglas–Peucker),
+        - uniform resampling of polygon vertices.
+    These parameters (``poly_epsilon_rel``, ``poly_min_points``,
+    ``poly_target_points``) are stored in :data:`HF_settings` and read
+    transparently, ensuring globally consistent behaviour.
+
+5.  Render visual Quality Assessment (QA) overlays for each channel.
+
+6.  Compose RGB training images through hue-based fusion of selected channels,
+    optionally injecting unannotated channels as noise sources.
+
+7.  Export YOLO-formatted annotations and RGB images into the expected
+    train/val directory layout.
+
+8.  Optionally generate MIP-based datasets for Z-stacks
+    (currently disabled pending refinement).
+
+9.  Perform a stratified train/val split that attempts to preserve
+    the class distribution across subsets.
+
 
 Public API
 ----------
 - prepare_class_inputs(channels, n, c, ratio)
-    Build per-frame annotations (polygons) from thresholds or JSON segmentations.
+    Build per-frame class annotations (YOLO polygons from masks or JSON).
+
+- postprocess_polygons(polygons_per_channel)
+    Apply simplification and arc-length-based resampling to all polygons
+    using global parameters defined in :data:`HF_settings`.
+
 - generate_contours(base, polygons_per_channel, channels, class_ids)
-    Render filled/outlined polygons as visual overlays for QA.
+    Save filled/outlined contour overlays for visual validation.
+
 - generate_dataset(base, n, c, channels, polygons_per_channel)
-    Create RGB composites and YOLO segmentation labels for training.
+    Compose fused RGB images and export YOLO segmentation labels.
+
 - split_train_val()
-    Move a fraction of training images (and labels) to validation.
-- max_intensity_projection_multichannel(img_name, base, stack, polygons_per_channel, class_ids, n, c, ratio)
-    Produce a MIP per channel, aggregate polygons across Z, export overlays and dataset.
+    Perform stratified splitting while preserving per-class frequencies.
+
+- max_intensity_projection_multichannel(...)
+    Construct a MIP-based mini-dataset (experimental).
+
 - generate_training_dataset()
-    Orchestrate the full dataset generation flow from input TIFFs.
+    Main entry point. Runs the entire pipeline for all TIFFs in ``tiff_dir``.
+
 
 Notes
 -----
-- Channel indexing is 1-based throughout (consistent with upstream modules).
-- Hue fusion uses deterministic palette rotation when hashing the filename,
-  enabling reproducible visuals.
-- JSON polygon application to Z-stacks is not implemented (explicit failure).
+- Channel indexing remains 1-based throughout (consistent with the UI and
+  upstream modules).
+
+- Polygon coordinates are normalized to the resized image dimensions
+  (range ``[0, 1]``).
+
+- Polygon simplification and resampling ensure cleaner, more consistent labels,
+  improving training stability and reducing annotation noise.
+
+- JSON polygon segmentation is currently supported only for single-plane images.
+
 """
+
 
 import os
 import cv2
@@ -59,14 +105,31 @@ from hfinder.session import settings as HF_settings
 
 
 
-def simplify_flat_polygon(flat, epsilon_rel=0.001, min_points=6):
+def simplify_flat_polygon(flat, epsilon_rel, min_points):
     """
-    Simplifie un polygone YOLO (coords normalisées) avec Douglas–Peucker.
+    Simplify a normalized YOLO-style polygon using the Douglas–Peucker algorithm.
 
-    :param flat: [x1, y1, ..., xn, yn] en [0, 1].
-    :param epsilon_rel: fraction de la longueur de périmètre utilisée pour eps.
-    :param min_points: nombre minimum de points à conserver.
-    :return: polygone aplati simplifié, ou original si simplification non pertinente.
+    The polygon is given as a flat list of normalized coordinates
+    ``[x1, y1, ..., xn, yn]`` in the range ``[0.0, 1.0]``. The relative
+    tolerance ``epsilon_rel`` is applied to the normalized perimeter of the
+    polygon; larger values produce coarser, less detailed contours. If the
+    simplified polygon would contain fewer than ``min_points`` vertices, the
+    original polygon is returned unchanged.
+
+    :param flat: Flattened list of polygon vertices as
+                 ``[x1, y1, ..., xn, yn]`` in normalized coordinates.
+    :type flat: list[float]
+    :param epsilon_rel: Relative tolerance used by the Douglas–Peucker
+                        simplification, expressed as a fraction of the
+                        polygon perimeter.
+    :type epsilon_rel: float
+    :param min_points: Minimum number of vertices required for the simplified
+                       polygon; polygons falling below this threshold are
+                       returned unchanged.
+    :type min_points: int
+    :return: Simplified polygon as a flattened list of vertices, or the
+             original polygon if simplification is not applicable.
+    :rtype: list[float]
     """
     if not flat or len(flat) < 2 * min_points:
         return flat
@@ -90,13 +153,27 @@ def simplify_flat_polygon(flat, epsilon_rel=0.001, min_points=6):
 
 
 
-def resample_flat_polygon(flat, target_points=60):
+def resample_flat_polygon(flat, target_points):
     """
-    Répartit les points d’un polygone à intervalles réguliers sur le périmètre.
+    Resample a normalized polygon so that vertices are evenly spaced
+    along its perimeter.
 
-    :param flat: [x1, y1, ..., xn, yn] (normalisé).
-    :param target_points: nombre de points souhaité (approx.).
-    :return: polygone aplati ré-échantillonné.
+    The polygon is given as a flat list of normalized coordinates
+    ``[x1, y1, ..., xn, yn]`` in the range ``[0.0, 1.0]``. The function
+    constructs a closed contour and interpolates new vertices at
+    (approximately) regular arc-length intervals, returning a polygon
+    with ``target_points`` vertices.
+
+    :param flat: Flattened list of polygon vertices as
+                 ``[x1, y1, ..., xn, yn]`` in normalized coordinates.
+    :type flat: list[float]
+    :param target_points: Desired number of vertices in the resampled
+                          polygon. Very small polygons may effectively
+                          limit the useful number of points.
+    :type target_points: int
+    :return: Resampled polygon as a flattened list of vertices with
+             (approximately) ``target_points`` points.
+    :rtype: list[float]
     """
     if not flat or len(flat) < 6:
         return flat
@@ -143,20 +220,51 @@ def resample_flat_polygon(flat, target_points=60):
     return new_pts.flatten().tolist()
 
 
-# TODO: set these parameters in HF_settings?
-# epsilon_rel : plus grand → contours plus anguleux/moins détaillés.
-# target_points : nombre de points cible par polygone.
-# min_points : seuil en dessous duquel on ne garde pas un polygone.
-def postprocess_polygons(polygons_per_channel,
-                         epsilon_rel=0.001,
-                         target_points=60,
-                         min_points=6):
-    """
-    Applique simplification + ré-échantillonnage à l’ensemble des polygones.
 
-    :param polygons_per_channel: {ch: [(class_name, [flat_polygons...]), ...]}
-    :return: même structure, avec polygones optimisés.
+def postprocess_polygons(polygons_per_channel):
     """
+    Apply geometric post-processing (simplification and resampling)
+    to all polygons in all channels.
+
+    This function iterates over the mapping of channels to class-labeled
+    polygons, applies :func:`simplify_flat_polygon` followed by
+    :func:`resample_flat_polygon` to each polygon, and returns a new
+    mapping with optimized polygons. Very small or degenerate polygons
+    may be discarded, and channels for which no valid polygons remain
+    are omitted from the result.
+
+    The numerical parameters controlling simplification and resampling
+    (e.g. ``"poly_epsilon_rel"``, ``"poly_min_points"``,
+    ``"poly_target_points"``) are read from :data:`HF_settings` inside
+    this function, so they do not appear in its public signature and
+    their default values are defined in a single place.
+
+    The expected input structure is::
+
+        {
+            channel_id: [
+                (class_name, [flat_polygon_1, flat_polygon_2, ...]),
+                ...
+            ],
+            ...
+        }
+
+    where each ``flat_polygon_i`` is a flattened list of normalized
+    coordinates ``[x1, y1, ..., xn, yn]``.
+
+    :param polygons_per_channel: Mapping from channel identifiers to
+                                 lists of ``(class_name, [polygons])``,
+                                 where each polygon is a flattened list
+                                 of normalized vertices.
+    :type polygons_per_channel: dict[Any, list[tuple[str, list[list[float]]]]]
+    :return: New mapping with simplified and resampled polygons, using
+             the same structure as the input.
+    :rtype: dict[Any, list[tuple[str, list[list[float]]]]]
+    """
+    epsilon_rel = HF_settings.get("epsilon_rel")
+    target_points = HF_settings.get("target_points")
+    min_points = HF_settings.get("min_points")
+    
     new_map = defaultdict(list)
 
     for ch, items in polygons_per_channel.items():
@@ -164,13 +272,10 @@ def postprocess_polygons(polygons_per_channel,
             new_polys = []
             for flat in polys:
                 if not flat or len(flat) < 2 * min_points:
-                    continue  # on ignore les minuscules artefacts
+                    continue  # ignore small artefacts
 
-                flat_simpl = simplify_flat_polygon(flat,
-                                                   epsilon_rel=epsilon_rel,
-                                                   min_points=min_points)
-                flat_resampled = resample_flat_polygon(flat_simpl,
-                                                       target_points=target_points)
+                flat_simpl = simplify_flat_polygon(flat, epsilon_rel, min_points)
+                flat_resampled = resample_flat_polygon(flat_simpl, target_points)
                 new_polys.append(flat_resampled)
 
             if new_polys:
@@ -716,13 +821,8 @@ def generate_training_dataset():
         polygons_per_channel = prepare_class_inputs(channels, n, c, ratio)
         
         # Post-traitement des polygones pour simplifier et homogénéiser les contours
-        polygons_per_channel = postprocess_polygons(
-            polygons_per_channel
-            #epsilon_rel=HF_settings.get("poly_epsilon_rel", 0.001),
-            #target_points=HF_settings.get("poly_target_points", 60),
-            #min_points=HF_settings.get("poly_min_points", 6),
-        )
-        
+        polygons_per_channel = postprocess_polygons(polygons_per_channel)
+
         # QA overlays then dataset generation
         generate_contours(img_base, polygons_per_channel, channels, class_ids)     
         generate_dataset(img_base, n, c, channels, polygons_per_channel)
