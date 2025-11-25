@@ -74,6 +74,7 @@
         "mode": "preprocess|train",
         "long": "publication",
         "config": {
+            "action": "store_true",
             "help": "Print contours as in publication style."
         }
     },
