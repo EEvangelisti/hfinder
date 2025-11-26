@@ -20,8 +20,8 @@ into a YOLOv8-compatible segmentation dataset. Its core responsibilities are:
 4.  Apply geometric post-processing to all polygons:
         - contour simplification (Douglas–Peucker),
         - uniform resampling of polygon vertices.
-    These parameters (``poly_epsilon_rel``, ``poly_min_points``,
-    ``poly_target_points``) are stored in :data:`HF_settings` and read
+    These parameters (``epsilon_rel``, ``min_points``,
+    ``target_points``) are stored in :data:`HF_settings` and read
     transparently, ensuring globally consistent behaviour.
 
 5.  Render visual Quality Assessment (QA) overlays for each channel.
@@ -41,26 +41,26 @@ into a YOLOv8-compatible segmentation dataset. Its core responsibilities are:
 
 Public API
 ----------
-- prepare_class_inputs(channels, n, c, ratio)
+- generate_masks_and_polygons(channels, n, c, ratio)
     Build per-frame class annotations (YOLO polygons from masks or JSON).
 
-- postprocess_polygons(polygons_per_channel)
+- simplify_and_resample_polygons(polygons_per_channel)
     Apply simplification and arc-length-based resampling to all polygons
     using global parameters defined in :data:`HF_settings`.
 
 - generate_contours(base, polygons_per_channel, channels, class_ids)
     Save filled/outlined contour overlays for visual validation.
 
-- generate_dataset(base, n, c, channels, polygons_per_channel)
+- export_yolo_images_and_labels(base, channels, polygons_per_channel)
     Compose fused RGB images and export YOLO segmentation labels.
 
 - split_train_val()
     Perform stratified splitting while preserving per-class frequencies.
 
-- max_intensity_projection_multichannel(...)
+- build_mip_dataset_from_stack(...)
     Construct a MIP-based mini-dataset (experimental).
 
-- generate_training_dataset()
+- build_full_training_dataset()
     Main entry point. Runs the entire pipeline for all TIFFs in ``tiff_dir``.
 
 
@@ -82,16 +82,13 @@ Notes
 
 import os
 import cv2
-import json
 import random
 import shutil
 import tifffile
 import colorsys
 import numpy as np
-import matplotlib.pyplot as plt
 from PIL import Image
 from glob import glob
-from itertools import chain
 from collections import defaultdict, Counter
 from hfinder.core import log as HF_log
 from hfinder.core import utils as HF_utils
@@ -221,7 +218,7 @@ def resample_flat_polygon(flat, target_points):
 
 
 
-def postprocess_polygons(polygons_per_channel):
+def simplify_and_resample_polygons(polygons_per_channel):
     """
     Apply geometric post-processing (simplification and resampling)
     to all polygons in all channels.
@@ -285,7 +282,7 @@ def postprocess_polygons(polygons_per_channel):
 
 
 
-def prepare_class_inputs(channels, n, c, ratio):
+def generate_masks_and_polygons(channels, n, c, ratio):
     """
     Generate segmentation masks and polygon annotations per class, for each
     frame or image channel, based on class-specific directives.
@@ -334,7 +331,7 @@ def prepare_class_inputs(channels, n, c, ratio):
                 name = f"{base}_{cls}_mask.png" if n == 1 \
                        else f"{base}_frame{frame}_{cls}_mask.png"
                 binary_output = os.path.join(masks_dir, name)
-                plt.imsave(binary_output, binary, cmap='gray')
+                cv2.imwrite(binary_output, binary)
 
         elif poly_json is not None:
             # Load user-provided segmentation polygons (single-plane only)
@@ -355,7 +352,7 @@ def prepare_class_inputs(channels, n, c, ratio):
                 name = f"{base}_{cls}_mask.png" if n == 1 \
                        else f"{base}_frame{frame}_{cls}_mask.png"
                 binary_output = os.path.join(masks_dir, name)
-                plt.imsave(binary_output, binary, cmap='gray')
+                cv2.imwrite(binary_output, binary)
 
     return results
 
@@ -457,7 +454,7 @@ def generate_contours(base, polygons_per_channel, channels, class_ids):
 
 
 
-def generate_dataset(base, n, c, channels, polygons_per_channel):
+def export_yolo_images_and_labels(base, channels, polygons_per_channel):
     """
     Compose RGB training images via hue fusion and export YOLO segmentation labels.
 
@@ -482,13 +479,6 @@ def generate_dataset(base, n, c, channels, polygons_per_channel):
     img_dir = HF_folders.get_image_train_dir()
     lbl_dir = HF_folders.get_label_train_dir()
     class_ids = HF_settings.load_class_definitions()
-
-    annotated_channels = {ch for ch, polys in polygons_per_channel.items() if polys}
-    all_channels = set(channels.keys())
-
-    if HF_settings.get("mode") == "debug":
-        print(f"polygons_per_channel.keys() = {polygons_per_channel.keys()}, \
-                list(annotated_channels) = {list(annotated_channels)}")
 
     for ch, img2d in channels.items():
         # 1) Écrire l’image (grayscale → 3 canaux identiques si besoin)
@@ -672,7 +662,7 @@ def split_train_val(validation_frac=0.2, seed=42):
 
 
 
-def max_intensity_projection_multichannel(img_name, base, stack, polygons_per_channel, class_ids, n, c, ratio):
+def build_mip_dataset_from_stack(img_name, base, stack, polygons_per_channel, class_ids, n, c, ratio):
     """
     Build a Max Intensity Projection (MIP) across Z and export a mini-dataset.
 
@@ -770,16 +760,15 @@ def max_intensity_projection_multichannel(img_name, base, stack, polygons_per_ch
         class_ids
     )  
 
-    generate_dataset(
+    export_yolo_images_and_labels(
         base + "_MIP",
-        n=1, c=c,
         channels=stacked_channels_dict,
         polygons_per_channel=polygons_per_stacked_channel
     )
 
 
 
-def generate_training_dataset():
+def build_full_training_dataset():
     """
     End-to-end dataset generation from a folder of TIFFs.
 
@@ -818,19 +807,19 @@ def generate_training_dataset():
 
         # Resize channels to the configured size; get ratio and (n, c)
         channels, ratio, (n, c) = HF_ImageOps.resize_multichannel_image(img)   
-        polygons_per_channel = prepare_class_inputs(channels, n, c, ratio)
+        polygons_per_channel = generate_masks_and_polygons(channels, n, c, ratio)
         
         # Post-traitement des polygones pour simplifier et homogénéiser les contours
-        polygons_per_channel = postprocess_polygons(polygons_per_channel)
+        polygons_per_channel = simplify_and_resample_polygons(polygons_per_channel)
 
         # QA overlays then dataset generation
         generate_contours(img_base, polygons_per_channel, channels, class_ids)     
-        generate_dataset(img_base, n, c, channels, polygons_per_channel)
+        export_yolo_images_and_labels(img_base, channels, polygons_per_channel)
 
         # Optional MIP export when multiple Z-slices exist
         # FIXME: currently deactivated because it is not satisfactory.
         if n > 1 and False:
-            max_intensity_projection_multichannel(
+            build_mip_dataset_from_stack(
                 img_name, img_base, img, polygons_per_channel,
                 class_ids, n, c, ratio
             )

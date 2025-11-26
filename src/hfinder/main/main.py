@@ -13,7 +13,7 @@ def preprocess(args=None):
         HF_settings.set("running_mode", "preprocess")
     HF_settings.print_summary()
     HF_folders.create_session_folders()
-    HF_preprocess.generate_training_dataset()
+    HF_preprocess.build_full_training_dataset()
 
 
 def train(args):
