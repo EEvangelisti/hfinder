@@ -1,80 +1,79 @@
 """
-High-level dataset preparation pipeline for HFinder.
+High-level preprocessing pipeline for converting multichannel TIFF images
+into a YOLOv8-compatible segmentation dataset.
+
+This module implements the full annotation workflow: mask generation,
+polygon extraction, geometric refinement, visual QA rendering, and final
+export of RGB training images together with YOLO segmentation labels.
+Only well-defined, channel-wise training samples are produced; the former
+hue-fusion and noise-channel strategies have been removed for clarity and
+predictability.
 
 Overview
 --------
-This module orchestrates the full conversion of multichannel TIFF images
-into a YOLOv8-compatible segmentation dataset. Its core responsibilities are:
+1.  Load class-specific directives for the current image
+    (channel assignments, thresholds, optional manual JSON segmentations).
 
-1.  Load class-specific instructions for the current image
-    (thresholds, channel assignments, optional manual JSON segmentations).
+2.  Generate binary masks for each annotated class and channel, using
+        • fixed thresholds,
+        • manual polygon files,
+        • or automatic thresholding.
+    Masks are saved for inspection.
 
-2.  Produce masks and polygonal annotations for each class and channel,
-    using either:
-        - fixed thresholds,
-        - user-provided polygons,
-        - or automatic thresholding.
+3.  Convert masks or manual annotations into YOLO-style normalized
+    polygons. Coordinates are rescaled using the resize ratio provided by
+    :mod:`HF_ImageOps`.
 
-3.  Convert binary masks and contours into normalized YOLO polygons.
+4.  Apply geometric post-processing:
+        • contour simplification via Douglas–Peucker,
+        • uniform arc-length resampling of polygon vertices.
+    The parameters (`epsilon_rel`, `min_points`, `target_points`)
+    are retrieved from :data:`HF_settings` to ensure global consistency.
 
-4.  Apply geometric post-processing to all polygons:
-        - contour simplification (Douglas–Peucker),
-        - uniform resampling of polygon vertices.
-    These parameters (``epsilon_rel``, ``min_points``,
-    ``target_points``) are stored in :data:`HF_settings` and read
-    transparently, ensuring globally consistent behaviour.
+5.  Render visual QA overlays (filled polygons + class labels) for each
+    channel, enabling rapid inspection of annotation quality.
 
-5.  Render visual Quality Assessment (QA) overlays for each channel.
+6.  Export one RGB training image per channel (grayscale is replicated
+    to 3 channels when necessary), together with the corresponding YOLO
+    `.txt` labels. Each channel is treated as an independent sample.
 
-6.  Compose RGB training images through hue-based fusion of selected channels,
-    optionally injecting unannotated channels as noise sources.
+7.  Optionally construct a Max-Intensity-Projection (MIP) mini-dataset
+    for Z-stacks. This pathway remains experimental and is currently not
+    enabled by default.
 
-7.  Export YOLO-formatted annotations and RGB images into the expected
-    train/val directory layout.
-
-8.  Optionally generate MIP-based datasets for Z-stacks
-    (currently disabled pending refinement).
-
-9.  Perform a stratified train/val split that attempts to preserve
-    the class distribution across subsets.
-
+8.  After all images have been processed, perform a stratified
+    train/validation split via :mod:`dataset_split`, preserving class
+    diversity across subsets.
 
 Public API
 ----------
 - generate_masks_and_polygons(channels, n, c, ratio)
-    Build per-frame class annotations (YOLO polygons from masks or JSON).
+      Produce binary masks and initial polygons for each class/channel.
 
 - simplify_and_resample_polygons(polygons_per_channel)
-    Apply simplification and arc-length-based resampling to all polygons
-    using global parameters defined in :data:`HF_settings`.
+      Apply geometric simplification and resampling rules.
 
 - generate_contours(base, polygons_per_channel, channels, class_ids)
-    Save filled/outlined contour overlays for visual validation.
+      Render visual QA overlays.
 
 - export_yolo_images_and_labels(base, channels, polygons_per_channel)
-    Compose fused RGB images and export YOLO segmentation labels.
+      Export per-channel RGB samples and their YOLO segmentation labels.
 
 - build_mip_dataset_from_stack(...)
-    Construct a MIP-based mini-dataset (experimental).
+      Experimental MIP-based dataset construction.
 
 - build_full_training_dataset()
-    Main entry point. Runs the entire pipeline for all TIFFs in ``tiff_dir``.
-
+      Main high-level routine converting all TIFFs in ``tiff_dir`` into a
+      structured YOLO dataset.
 
 Notes
 -----
-- Channel indexing remains 1-based throughout (consistent with the UI and
-  upstream modules).
-
-- Polygon coordinates are normalized to the resized image dimensions
-  (range ``[0, 1]``).
-
-- Polygon simplification and resampling ensure cleaner, more consistent labels,
-  improving training stability and reducing annotation noise.
-
-- JSON polygon segmentation is currently supported only for single-plane images.
-
+- Channels remain 1-based throughout, matching the UI conventions.
+- Polygon coordinates are normalized to the resized image dimensions.
+- JSON segmentations are currently supported only for single-plane images.
+- Degenerate or very small polygons may be removed during post-processing.
 """
+
 
 
 import os
@@ -452,38 +451,48 @@ def generate_contours(base, polygons_per_channel, channels, class_ids):
 
 def export_yolo_images_and_labels(base, channels, polygons_per_channel):
     """
-    Compose RGB training images via hue fusion and export YOLO segmentation labels.
+    Export per-channel RGB images and their corresponding YOLO segmentation labels.
 
-    For each combination of annotated channels (per Z-frame if applicable):
-      - Sample optional "noise" channels (never annotated ones; same Z-frame for n>1).
-      - Compose a hue-fused RGB image (selected+noise).
-      - Save image as JPEG under dataset/images/train/.
-      - Export YOLO polygon labels if any annotated polygons exist for the combo.
+    Each entry in `channels` is treated as an independent training sample.
+    Grayscale images are converted to RGB by channel replication, while
+    already-RGB arrays are preserved as is. For every channel, a JPEG image
+    and a YOLO-formatted `.txt` annotation file are created. If no polygons
+    are associated with a given channel, an empty annotation file is written
+    to maintain dataset integrity.
 
-    :param base: Base filename for images/labels.
-    :type base: str
-    :param n: Number of Z frames (1 if single plane).
-    :type n: int
-    :param c: Channels per Z frame.
-    :type c: int
-    :param channels: Dict channel → 2D grayscale image.
-    :type channels: dict[int, np.ndarray]
-    :param polygons_per_channel: Dict channel → [(class_name, [polys...]), ...].
-    :type polygons_per_channel: dict[int, list[tuple[str, list[list[float]]]]]
-    :rtype: None
+    Parameters
+    ----------
+    base : str
+        Basename (without extension) used to construct output filenames.
+    channels : dict[int, np.ndarray]
+        Mapping from channel index to a 2D or 3D NumPy array representing
+        the corresponding image slice.
+    polygons_per_channel : dict[int, list[tuple[str, list[list[float]]]]]
+        Mapping from channel index to the list of annotated objects.
+        Each object is represented as `(class_name, polygon_list)`, where
+        `polygon_list` contains one or more polygons expressed as sequences
+        of `(x, y)` coordinates.
+
+    Output
+    ------
+    Writes one JPEG image and one YOLO `.txt` file per channel into the
+    directory specified by HF_Settings. Filenames follow the pattern:
+        <base>_cXX.jpg
+        <base>_cXX.txt
     """
     img_dir = HF_folders.get_image_train_dir()
     lbl_dir = HF_folders.get_label_train_dir()
     class_ids = HF_settings.load_class_definitions()
 
     for ch, img2d in channels.items():
-        # 1) Écrire l’image (grayscale → 3 canaux identiques si besoin)
+
         filename = f"{os.path.splitext(base)[0]}_c{ch:02d}.jpg"
         img_path = os.path.join(img_dir, filename)
-        if img2d.ndim == 2:
+
+        if img2d.ndim == 2: # grayscale image
             img_rgb = np.stack([img2d]*3, axis=-1).astype(np.uint8)
-        else:
-            img_rgb = img2d  # supposé déjà 3 canaux
+        else: # let's assume it is RGB
+            img_rgb = img2d
         Image.fromarray(img_rgb).save(img_path, "JPEG")
 
         # 2) Écrire les labels (vides si pas d’annotations)

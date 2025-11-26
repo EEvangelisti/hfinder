@@ -1,23 +1,44 @@
 """
-Dataset splitting utilities for YOLO-based training.
+Stratified train/validation splitting for YOLO-style segmentation datasets.
 
-This module performs a deterministic and stratified partitioning of a
-YOLO-formatted dataset into training and validation subsets. Images are
-associated with their corresponding annotation files, and classes are
-inferred directly from the YOLO polygon labels. The procedure preserves
-class diversity as much as possible: rare classes are allocated first,
-followed by a balanced distribution of the remaining samples.
+This module partitions a YOLO-formatted dataset into training and validation
+subsets while attempting to preserve the empirical class distribution.
+Images are paired with their corresponding annotation files, classes are
+inferred directly from YOLO segmentation labels, and samples are allocated
+in a deterministic yet stratified manner.
 
-Main features:
-    • Automatic detection of classes present in the dataset.
-    • Stratified allocation based on class frequency.
-    • Creation of empty annotation files when needed, ensuring YOLO
-      directory integrity.
-    • File organisation into `train/` and `val/` subdirectories.
+The split operates at the image level: each image (and its `.txt` file)
+is assigned either to the `train/` or `val/` subdirectory. When an image
+has no annotations, an empty label file is created to maintain YOLO
+directory integrity.
 
-The module exposes a single high-level entry point, `split_train_val`,
-which can be invoked after all images and labels have been generated.
+Main features
+-------------
+- Automatic discovery of all images and associated label files
+  in the configured dataset directories.
+
+- Extraction of class presence from YOLO polygon annotations, followed by
+  a stratified allocation that:
+    * prioritises rare classes when filling the validation set, and
+    * balances the remaining samples as evenly as possible.
+
+- Creation of missing, empty label files where necessary so that every
+  image has a valid annotation file, even when no objects are present.
+
+- Deterministic behaviour given a fixed file structure, enabling
+  reproducible experiments.
+
+Usage
+-----
+The module exposes a single high-level entry point:
+
+    split_train_val()
+
+which should be invoked once all training images and labels have been
+generated. It rearranges the files into `train/` and `val/` subfolders
+under the existing YOLO dataset layout.
 """
+
 
 import os
 import random
