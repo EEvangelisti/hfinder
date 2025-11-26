@@ -2,6 +2,7 @@
 import os
 import random
 import shutil
+from glob import glob
 from collections import Counter
 from hfinder.core import log as HF_log
 from hfinder.session import folders as HF_folders
