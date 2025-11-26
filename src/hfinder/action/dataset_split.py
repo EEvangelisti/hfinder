@@ -1,3 +1,23 @@
+"""
+Dataset splitting utilities for YOLO-based training.
+
+This module performs a deterministic and stratified partitioning of a
+YOLO-formatted dataset into training and validation subsets. Images are
+associated with their corresponding annotation files, and classes are
+inferred directly from the YOLO polygon labels. The procedure preserves
+class diversity as much as possible: rare classes are allocated first,
+followed by a balanced distribution of the remaining samples.
+
+Main features:
+    • Automatic detection of classes present in the dataset.
+    • Stratified allocation based on class frequency.
+    • Creation of empty annotation files when needed, ensuring YOLO
+      directory integrity.
+    • File organisation into `train/` and `val/` subdirectories.
+
+The module exposes a single high-level entry point, `split_train_val`,
+which can be invoked after all images and labels have been generated.
+"""
 
 import os
 import random
