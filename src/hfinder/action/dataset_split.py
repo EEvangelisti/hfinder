@@ -9,7 +9,7 @@ from hfinder.session import folders as HF_folders
 from hfinder.session import settings as HF_settings
 
 
-def run(validation_frac=0.2, seed=42):
+def split_train_val(validation_frac=0.2, seed=42):
 
     rng = random.Random(seed)
 

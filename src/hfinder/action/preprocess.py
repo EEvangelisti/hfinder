@@ -227,8 +227,8 @@ def simplify_and_resample_polygons(polygons_per_channel):
     are omitted from the result.
 
     The numerical parameters controlling simplification and resampling
-    (e.g. ``"poly_epsilon_rel"``, ``"poly_min_points"``,
-    ``"poly_target_points"``) are read from :data:`HF_settings` inside
+    (e.g. ``"epsilon_rel"``, ``min_points"``,
+    ``"target_points"``) are read from :data:`HF_settings` inside
     this function, so they do not appear in its public signature and
     their default values are defined in a single place.
 
@@ -656,4 +656,4 @@ def build_full_training_dataset():
             )
 
     # Split train/val at the end so both single-plane and MIP outputs are included
-    HF_DatasetSplit.run()
+    HF_DatasetSplit.split_train_val()
