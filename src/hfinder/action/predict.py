@@ -386,60 +386,52 @@ def run():
         # Sort by (best_cls_score, total_score, count)
         subset_info.sort(key=lambda t: (t[3], t[4], len(t[1])), reverse=True)
        
-        already_assigned = set()
+        # ---- COCO skeleton
+        coco = coco_skeleton(class_ids)
+        image_id = 1
+        coco["images"].append({
+            "id": image_id,
+            "file_name": tif_file,
+            "width":  int(W * scale_factor),
+            "height": int(H * scale_factor),
+        })
+        ann_id = 1  # global per TIFF
 
+        already_assigned = set()
         for ch, subset, best, best_score, total_score, scores in subset_info:
             if not scores:
                 continue
-            #print(f"In channel {ch}, best class is {best}.")
 
-            # Sélection robuste avec whitelist : co-dominance autorisée mais jamais séparée
-            present = set(scores.keys())  # classes détectées sur CE canal
- 
+            present = set(scores.keys())
+
             if best in already_assigned:
-                #print(f"The best class is already assigned.")
-                # Chercher des paires (c,a) telles que :
-                # - c != a
-                # - {c,a} ∈ whitelist_ids
-                # - c et a sont tous deux PRÉSENTS sur ce canal
                 pairs = [
                     (c, a) for c in present for a in present
                     if c != a and frozenset({c, a}) in whitelist_ids
                 ]
                 if not pairs:
-                    continue  # aucune co-dominance réalisable ici
-                # Choisir la paire au score total maximal
+                    continue
                 c_star, a_star = max(pairs, key=lambda p: scores[p[0]] + scores[p[1]])
                 kept_set = {c_star, a_star}
             else:
-                # Best est libre : on ajoute le partenaire whitelist SEULEMENT s'il est PRÉSENT
                 partners = {c for c in present if frozenset({c, best}) in whitelist_ids}
-                #print(f"The best class has not been used yet.")
-                #print(f"Will use the following partners: {}")
-                partners &= present  # explicite (déjà vrai), évite toute surprise
+                partners &= present
                 kept_set = {best} | (partners if partners else set())
- 
-            # Marquer toutes les classes retenues pour verrouiller les canaux suivants
+
             already_assigned |= kept_set
- 
-            # Filtrer les détections de CE canal pour n'inclure que kept_set
+
             subset = [d for d in subset if d["cls"] in kept_set]
             if not subset:
                 continue
 
-            # Mark chosen class
-            already_assigned.add(best)
-
-            # Keep detections of 'best' plus whitelisted co-occurrences
             filtered = [
                 d for d in subset
                 if (d["cls"] == best) or (frozenset({d["cls"], best}) in whitelist_ids)
             ]
-
             if not filtered:
                 continue
 
-            # Rescale (shallow copies) before export
+            # Rescale
             rescaled = []
             for d in filtered:
                 rescaled.append({
@@ -447,23 +439,8 @@ def run():
                     "conf": float(d["conf"]),
                     "xyxy": HGeom.rescale_box_xyxy(d["xyxy"], scale_factor),
                     "segs": [HGeom.rescale_seg_flat(seg, scale_factor) for seg in (d.get("segs") or [])],
-                    # optionally keep provenance:
-                    # "channels": d.get("channels", []),
-                    # "channel": ch,
                 })
 
-            # ---- COCO skeleton
-            coco = coco_skeleton(class_ids)
-            image_id = 1
-            coco["images"].append({
-                "id": image_id,
-                "file_name": tif_file,
-                "width":  int(W * scale_factor),
-                "height": int(H * scale_factor),
-            })
-
-            # ---- annotations
-            ann_id = 1
             for d in rescaled:
                 bbox_xywh = HGeom.bbox_xyxy_to_xywh(d["xyxy"])
                 if d["segs"]:
@@ -482,20 +459,10 @@ def run():
                     "segmentation": segmentation,
                     "iscrowd": 0,
                     "confidence": round(d["conf"], 4),
-                    "hf_channel": ch
+                    "hf_channel": ch, # ch ici = canal du subset_info (OK, 1-based si tes frames le sont)
                 })
                 ann_id += 1
 
-            # ---- filename tag from kept classes
-            kept_classes = sorted({d["cls"] for d in rescaled})
-            kept_names = [id_to_name[cid] for cid in kept_classes]
-            cls_tag = "+".join(kept_names)
-
-            # sanitize for filesystem
-            #import re
-            #safe_tag = re.sub(r"[^A-Za-z0-9+_-]+", "_", cls_tag)
-
-            out_name = f"{tif_base}_{cls_tag}.json"
-            with open(os.path.join(input_folder, out_name), "w") as f:
-                json.dump(coco, f, indent=2)
-
+        out_name = f"{tif_base}.json"
+        with open(os.path.join(input_folder, out_name), "w") as f:
+            json.dump(coco, f, indent=2)       
