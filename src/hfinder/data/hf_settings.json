@@ -61,6 +61,15 @@
             "help": "Path to the YOLO model file to be used as the starting point for training (pretrained weights or a custom checkpoint)."
         }
     },
+    "mf": {
+        "mode": "preprocess|train",
+        "type": "str",
+        "long": "manifest",
+        "config": {
+            "default": "",
+            "help": "Path to a JSON manifest (a JSON array of image filenames) used as a whitelist. If empty, all images are considered."
+        }
+    },
     "min": {
         "mode": "preprocess|train",
         "type": "int",
