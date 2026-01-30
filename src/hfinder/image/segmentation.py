@@ -23,7 +23,7 @@ Public API
 - auto_threshold_strategy(img, threshold): Apply named threshold + cleanup.
 - channel_custom_threshold(channel, threshold): One channel → (mask, yolo_polygons).
 - channel_auto_threshold(channel): Use default threshold from settings.
-- channel_custom_segment(json_path, ratio): Load/normalize COCO polygons to YOLO.
+- channel_custom_segment(json_path, ratio, allowed_category_names=None): Load/normalize COCO polygons to YOLO.
 
 Notes
 -----
@@ -576,6 +576,8 @@ def channel_custom_segment(json_path, ratio, allowed_category_names=None):
 
     polygons = []
     for ann in data.get("annotations", []):
+        if allowed_ids is not None and ann.get("category_id") not in allowed_ids:
+            continue
         if "segmentation" not in ann or not ann["segmentation"]:
             continue
 
