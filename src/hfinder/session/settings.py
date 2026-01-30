@@ -257,3 +257,28 @@ def load_class_definitions(keys='class_name'):
     else:
         return None
 
+
+
+def load_class_list():
+    """
+    Return a canonical list of class names.
+
+    Priority:
+      - If --category is provided: use it (CSV), normalize, sort.
+      - Otherwise: infer from basenames of JSON files in tiff_dir/hf_classes/, normalize, sort.
+
+    :return: Sorted list of class names, e.g. ["haustorium", "hypha", "nucleus"].
+    :rtype: list[str]
+    """
+    cat_arg = get("category") or ""
+    if cat_arg:
+        names = [c.strip().lower() for c in cat_arg.split(",") if c.strip()]
+        return sorted(set(names))
+
+    class_dir = os.path.join(get("tiff_dir"), "hf_classes")
+    if not os.path.isdir(class_dir):
+        HF_log.fail(f"No such directory: {class_dir}")
+
+    files = sorted(glob(os.path.join(class_dir, "*.json")))
+    names = [os.path.splitext(os.path.basename(f))[0].lower() for f in files]
+    return sorted(set(names))
