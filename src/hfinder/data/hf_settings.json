@@ -17,6 +17,15 @@
             "help": "Minimum confidence threshold for detections. Objects detected with confidence below this threshold will be disregarded."
         }
     },
+    "cat": {
+        "mode": "preprocess|train",
+        "type": "str",
+        "long": "category",
+        "config": {
+            "default": "",
+            "help": "Category or categories to use for training. Comma-separated list allowed (e.g. haustorium or haustorium,hypha). If empty, all categories are used."
+        }
+    },
     "d": {
         "mode": "predict",
         "type": "str",
