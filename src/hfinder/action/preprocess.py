@@ -47,13 +47,13 @@ Overview
 
 Public API
 ----------
-- generate_masks_and_polygons(channels, n, c, ratio)
+- generate_masks_and_polygons(channels, n, c, ratio, allowed_category_names)
       Produce binary masks and initial polygons for each class/channel.
 
 - simplify_and_resample_polygons(polygons_per_channel)
       Apply geometric simplification and resampling rules.
 
-- generate_contours(base, polygons_per_channel, channels, class_ids)
+- generate_contours(base, polygons_per_channel, channels, classes)
       Render visual QA overlays.
 
 - export_yolo_images_and_labels(base, channels, polygons_per_channel)
@@ -278,7 +278,7 @@ def simplify_and_resample_polygons(polygons_per_channel):
 
 
 
-def generate_masks_and_polygons(channels, n, c, ratio):
+def generate_masks_and_polygons(channels, n, c, ratio, allowed_category_names):
     """
     Generate segmentation masks and polygon annotations per class, for each
     frame or image channel, based on class-specific directives.
@@ -307,9 +307,12 @@ def generate_masks_and_polygons(channels, n, c, ratio):
     results = defaultdict(list)
     masks_dir = HF_folders.get_masks_dir()
     base = HF_settings.get("current_image.base")
+    allowed = set(allowed_category_names) if allowed_category_names else None
 
     for cls in HF_ImageInfo.get_classes():
-    
+        if allowed is not None and cls not in allowed:
+            continue
+ 
         HF_ImageInfo.set_current_class(cls)
         # Per-class directives
         ch = HF_ImageInfo.get_channel()
@@ -334,7 +337,7 @@ def generate_masks_and_polygons(channels, n, c, ratio):
             if n > 1:
                 HF_log.fail(f"File '{base}.tif' - applying user segmentation to Z-stacks has not been implemented yet")
             json_path = os.path.join(HF_settings.get("tiff_dir"), poly_json)
-            polygons = HF_segmentation.channel_custom_segment(json_path, ratio)
+            polygons = HF_segmentation.channel_custom_segment(json_path, ratio, {cls})
             results[ch].append((cls, polygons))
 
         else:
@@ -354,7 +357,7 @@ def generate_masks_and_polygons(channels, n, c, ratio):
 
 
 
-def generate_contours(base, polygons_per_channel, channels, class_ids):
+def generate_contours(base, polygons_per_channel, channels, classes):
     """
     Draw filled/outlined polygons over grayscale channels and save overlays.
 
@@ -364,8 +367,8 @@ def generate_contours(base, polygons_per_channel, channels, class_ids):
     :type polygons_per_channel: dict[int, list[tuple[str, list[list[float]]]]]
     :param channels: Dict channel → 2D grayscale image.
     :type channels: dict[int, np.ndarray]
-    :param class_ids: Class name → integer ID mapping (ignored here except for filtering).
-    :type class_ids: dict[str, int]
+    :param classes: Class names.
+    :type classes: list[str]
     :rtype: None
     """
     contours_dir = HF_folders.get_contours_dir()
@@ -397,7 +400,7 @@ def generate_contours(base, polygons_per_channel, channels, class_ids):
 
 
         for class_name, poly in polygons:
-            if class_name not in class_ids:
+            if class_name not in classes:
                 continue
 
             for poly in poly:
@@ -483,23 +486,23 @@ def export_yolo_images_and_labels(base, channels, polygons_per_channel):
     """
     img_dir = HF_folders.get_image_train_dir()
     lbl_dir = HF_folders.get_label_train_dir()
-    class_ids = HF_settings.load_class_definitions()
+    classes = HF_settings.load_class_list()
 
     for ch, img2d in channels.items():
 
         filename = f"{os.path.splitext(base)[0]}_c{ch:02d}.jpg"
         img_path = os.path.join(img_dir, filename)
 
-        if img2d.ndim == 2: # grayscale image
+        if img2d.ndim == 2: # grayscale image.
             img_rgb = np.stack([img2d]*3, axis=-1).astype(np.uint8)
-        else: # let's assume it is RGB
+        else: # let's assume it is RGB.
             img_rgb = img2d
         Image.fromarray(img_rgb).save(img_path, "JPEG")
 
-        # 2) Écrire les labels (vides si pas d’annotations)
+        # Write labels (can be empty files if there are no annotations).
         annotations = polygons_per_channel.get(ch, [])
         label_path = os.path.join(lbl_dir, os.path.splitext(filename)[0] + ".txt")
-        HF_utils.save_yolo_segmentation_label(label_path, annotations, class_ids)
+        HF_utils.save_yolo_segmentation_label(label_path, annotations, classes)
 
 
 
@@ -644,8 +647,10 @@ def build_full_training_dataset():
             HF_log.warn(f"{len(missing)} manifest images not found in tiff_dir (showing up to 10): {missing[:10]}")
 
 
-    class_ids = HF_settings.load_class_definitions()
-    HF_folders.write_yolo_yaml(class_ids)
+    classes = HF_settings.load_class_list()
+    allowed_category_names = set(classes)
+    #HF_log.info(f"Active classes: {classes}")
+    HF_folders.write_yolo_yaml(classes)
     HF_ImageInfo.initialize()
 
     for img_path in image_paths:
@@ -664,13 +669,13 @@ def build_full_training_dataset():
 
         # Resize channels to the configured size; get ratio and (n, c)
         channels, ratio, (n, c) = HF_ImageOps.resize_multichannel_image(img)   
-        polygons_per_channel = generate_masks_and_polygons(channels, n, c, ratio)
+        polygons_per_channel = generate_masks_and_polygons(channels, n, c, ratio, allowed_category_names)
         
         # Post-traitement des polygones pour simplifier et homogénéiser les contours
         polygons_per_channel = simplify_and_resample_polygons(polygons_per_channel)
 
         # QA overlays then dataset generation
-        generate_contours(img_base, polygons_per_channel, channels, class_ids)     
+        generate_contours(img_base, polygons_per_channel, channels, classes)     
         export_yolo_images_and_labels(img_base, channels, polygons_per_channel)
 
         # Optional MIP export when multiple Z-slices exist
@@ -678,7 +683,7 @@ def build_full_training_dataset():
         if n > 1 and False:
             build_mip_dataset_from_stack(
                 img_name, img_base, img, polygons_per_channel,
-                class_ids, n, c, ratio
+                classes, n, c, ratio
             )
 
     # Split train/val at the end so both single-plane and MIP outputs are included
