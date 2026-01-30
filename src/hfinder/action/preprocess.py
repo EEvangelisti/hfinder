@@ -78,6 +78,7 @@ Notes
 
 import os
 import cv2
+import json
 import random
 import tifffile
 import colorsys
@@ -625,8 +626,24 @@ def build_full_training_dataset():
     :rtype: None
     """
     data_dir = HF_settings.get("tiff_dir")
-    image_paths = sorted(glob(os.path.join(data_dir, "*.tif")))
-    
+
+    # Retrieve all TIFFS, but may filter out some if a manifest file is present.
+    image_paths = sorted(glob(os.path.join(data_dir, "*.tif")) + glob(os.path.join(data_dir, "*.tiff")))
+    manifest_path = HF_settings.get("manifest")
+    manifest = None
+
+    if manifest_path:
+        with open(manifest_path, "r", encoding="utf-8") as f:
+            manifest = set(json.load(f))
+        image_paths = [p for p in image_paths if os.path.basename(p) in manifest]
+        HF_log.info(f"Manifest enabled: {len(image_paths)} images kept from {manifest_path}")
+
+        # Report any missing TIFF file compared to the manifest.
+        missing = sorted(manifest - {os.path.basename(p) for p in image_paths})
+        if missing:
+            HF_log.warn(f"{len(missing)} manifest images not found in tiff_dir (showing up to 10): {missing[:10]}")
+
+
     class_ids = HF_settings.load_class_definitions()
     HF_folders.write_yolo_yaml(class_ids)
     HF_ImageInfo.initialize()
