@@ -305,7 +305,7 @@ def get_contours_dir(root=True):
 
 
 
-def write_yolo_yaml(class_ids):
+def write_yolo_yaml(classes):
     """
     Generate and save a YOLO-compatible dataset YAML file.
 
@@ -326,7 +326,7 @@ def write_yolo_yaml(class_ids):
         "train": get_image_train_dir(),
         "val": get_image_val_dir(),
         "nc": len(class_ids),
-        "names": [x for x, _ in sorted(class_ids.items(), key=lambda x: x[1])]
+        "names": classes
     }
 
     yaml_path = os.path.join(get_dataset_dir(), "dataset.yaml")
