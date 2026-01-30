@@ -45,6 +45,16 @@ import scipy
 import skimage
 import numpy as np
 import matplotlib.pyplot as plt
+
+try:
+    from shapely.geometry import Polygon
+    from shapely.ops import triangulate
+    HAS_SHAPELY = True
+except ImportError:
+    HAS_SHAPELY = False
+    Polygon = None
+    triangulate = None
+
 from skimage.feature import peak_local_max
 from skimage.morphology import binary_closing
 from skimage.morphology import remove_small_holes
@@ -54,6 +64,63 @@ from hfinder.core import geometry as HF_geometry
 from hfinder.session import folders as HF_folders
 from hfinder.session import settings as HF_settings
 from hfinder.session import current as HF_ImageInfo
+
+
+
+def _polygon_with_holes_to_yolo_polygons(exterior,
+                                         holes,
+                                         width: int,
+                                         height: int,
+                                         triangle_min_area: float = 1.0):
+    """
+    Convert a polygon with holes (pixel coordinates) into a list of YOLO-style
+    polygons whose union covers the same region while preserving the holes.
+
+    :param exterior: Exterior ring as an array of shape (N, 1, 2) or (N, 2).
+    :param holes: Iterable of interior rings, each with shape (M, 1, 2) or (M, 2).
+    :param width: Image width in pixels.
+    :param height: Image height in pixels.
+    :param triangle_min_area: Minimum triangle area (in pixel units) to keep.
+    :return: List of flattened polygons [x1, y1, ..., xn, yn] normalized to [0, 1].
+    """
+    if not HAS_SHAPELY:
+        HF_log.warn("Shapely is not available: falling back to filled polygons "
+                    "(holes will be lost).")
+        return []
+
+    # Normalize exterior to (N, 2)
+    ext = np.asarray(exterior, dtype=float).reshape(-1, 2)
+    ext_coords = [(float(x), float(y)) for x, y in ext]
+
+    holes_coords = []
+    for h in holes:
+        h = np.asarray(h, dtype=float).reshape(-1, 2)
+        if h.shape[0] < 3:
+            continue
+        holes_coords.append([(float(x), float(y)) for x, y in h])
+
+    poly = Polygon(ext_coords, holes=holes_coords if holes_coords else None)
+    if poly.is_empty or not poly.is_valid or poly.area <= 0:
+        return []
+
+    tris = triangulate(poly)
+    yolo_polys = []
+    for tri in tris:
+        if tri.is_empty or tri.area < triangle_min_area:
+            continue
+        xs, ys = tri.exterior.coords.xy
+        coords = list(zip(xs, ys))[:-1]  # drop closing point
+
+        flat = []
+        for px, py in coords:
+            flat.append(px / float(width))
+            flat.append(py / float(height))
+
+        if len(flat) >= 6:  # at least 3 vertices
+            yolo_polys.append(flat)
+
+    return yolo_polys
+
 
 
 def mask_to_polygons(mask,
@@ -414,13 +481,39 @@ def channel_custom_threshold(channel, threshold):
         _, binary = cv2.threshold(channel, thresh_val, 255, cv2.THRESH_BINARY)
         binary = noise_and_gaps(binary)
 
-    contours = mask_to_polygons(binary)
+    if False:
+        h, w = binary.shape[:2]
 
-    # Filter out small contours
-    contours = filter_contours_min_area(contours)
-    
-    # Convert to YOLO-normalized polygons
-    yolo_polygons = HF_geometry.contours_to_yolo_polygons(contours)
+        # 1) Récupérer les anneaux [outer, hole1, hole2, ...]
+        regions = mask_to_polygons(binary, mode="rings")
+
+        # 2) Aire minimale pour filtrer les triangles
+        special_case = HF_ImageInfo.get("min_area_px")
+        min_area_px = float(HF_settings.get("min_area_px")) if special_case is None else float(special_case)
+
+        triangle_factor = 0.02
+        triangle_min_area = max(0.0, triangle_factor * min_area_px)
+
+        yolo_polygons = []
+        for region in regions:
+            if not region:
+                continue
+            outer = region[0]
+            holes = region[1:]
+            yolo_polygons.extend(
+                _polygon_with_holes_to_yolo_polygons(
+                    outer,
+                    holes,
+                    width=w,
+                    height=h,
+                    triangle_min_area=triangle_min_area,
+                )
+            )
+
+    else:
+        contours = mask_to_polygons(binary)
+        contours = filter_contours_min_area(contours)
+        yolo_polygons = HF_geometry.contours_to_yolo_polygons(contours)
 
     return binary, yolo_polygons
 
@@ -441,7 +534,7 @@ def channel_auto_threshold(channel):
 
 
 
-def channel_custom_segment(json_path, ratio):
+def channel_custom_segment(json_path, ratio, allowed_category_names=None):
     """
     Load COCO-style segmentation polygons and normalize them to YOLO format.
 
@@ -462,6 +555,24 @@ def channel_custom_segment(json_path, ratio):
         data = json.load(f)
 
     size = HF_settings.get("size")
+
+    # Optional filtering by COCO category name(s)
+    allowed_ids = None
+    if allowed_category_names:
+        name_to_id = {
+            (c.get("name", "").strip().lower()): c.get("id")
+            for c in data.get("categories", [])
+            if c.get("name") is not None and c.get("id") is not None
+        }
+        allowed_ids = {
+            name_to_id[name]
+            for name in allowed_category_names
+            if name in name_to_id
+        }
+
+        # If none of the requested categories exist in this JSON, return empty
+        if not allowed_ids:
+            return []
 
     polygons = []
     for ann in data.get("annotations", []):
