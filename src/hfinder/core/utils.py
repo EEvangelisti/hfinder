@@ -130,7 +130,7 @@ def restore_output(orig_stdout, orig_stderr):
 
 
 
-def save_yolo_segmentation_label(file_path, annotations, class_ids):
+def save_yolo_segmentation_label(file_path, annotations, classes):
     """
     Write YOLOv8 segmentation labels (polygon format).
 
@@ -142,16 +142,18 @@ def save_yolo_segmentation_label(file_path, annotations, class_ids):
     :param annotations: Iterable of (cls_name, polygons) where
                         polygons = [[x1, y1, x2, y2, ...], ...] (normalized).
     :type annotations: list[tuple[str, list[list[float]]]]
-    :param class_ids: Mapping from class name to class index.
-    :type class_ids: dict[str, int]
+    :param classes: Canonical list of class names (index = YOLO class id).
+    :type classes: list[str]
     :rtype: None
     """
+    class_to_id = {name: i for i, name in enumerate(classes)}
+
     with open(file_path, "w") as f:
         for cls_name, polygons in annotations:
-            cls_id = class_ids.get(cls_name)
+            cls_id = class_to_id.get(cls_name)
             if cls_id is None:
                 continue
-            for flat in polygons:  # UNE LIGNE PAR POLYGONE
+            for flat in polygons:  # one line per polygon
                 f.write(f"{cls_id} " + " ".join(f"{v:.6f}" for v in flat) + "\n")
 
 
