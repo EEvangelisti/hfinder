@@ -93,9 +93,15 @@ def split_train_val(validation_frac=0.2, seed=42):
         for c in s: total_per_class[c] += 1
 
     total_all = sum(total_per_class.values())
-    class_defs = HF_settings.load_class_definitions(keys='id')
+    classes = HF_settings.load_class_list()
+
     for c, count in sorted(total_per_class.items()):
-        name = class_defs[c]
+        if c >= len(classes):
+            HF_log.warn(f"Unexpected class ID {c} (max={len(classes)-1}). Please fill a bug report.")
+            name = f"class_{c}"
+        else:
+            name = classes[c]
+
         pct = 100.0 * count / total_all if total_all else 0
         HF_log.info(f"{name:20s} ({c:2d}) : {count:6d} ({pct:5.2f}%)")
 
