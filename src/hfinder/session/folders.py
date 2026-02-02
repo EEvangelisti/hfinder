@@ -325,7 +325,7 @@ def write_yolo_yaml(classes):
         "path": get_root(),
         "train": get_image_train_dir(),
         "val": get_image_val_dir(),
-        "nc": len(class_ids),
+        "nc": len(classes),
         "names": classes
     }
 

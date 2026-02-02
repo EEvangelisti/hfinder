@@ -88,20 +88,23 @@ def initialize():
     # Locate the classes directory from settings and validate it.
     tiff_dir = HF_settings.get("tiff_dir")
     class_dir = os.path.join(tiff_dir, "hf_classes")
+    
     if not os.path.isdir(class_dir):
         HF_log.fail(f"No such directory: {class_dir}", exit_code=4)
 
     # Gather all class definition files and derive class names from filenames.
     class_files = sorted(glob(os.path.join(class_dir, "*.json")))
-    class_names = [os.path.splitext(os.path.basename(f))[0] for f in class_files]
+    class_names = [os.path.splitext(os.path.basename(f))[0].strip().lower() for f in class_files]
 
     # Get hidden channels
-    special_dir = os.path.join(tiff_dir, "hf_special")
-    if os.path.isdir(class_dir):    
-        json_file = os.path.join(special_dir, "hidden_channels.json")
-        with open(json_file, "r") as f:
-            global HIDDEN_CHANNELS
-            HIDDEN_CHANNELS = json.load(f)
+    instr_dir = os.path.join(tiff_dir, "hf_instructions")
+    global HIDDEN_CHANNELS
+    HIDDEN_CHANNELS = {}
+    if os.path.isdir(instr_dir):    
+        json_file = os.path.join(instr_dir, "hidden_channels.json")
+        if os.path.isfile(json_file):
+            with open(json_file, "r") as f:
+                HIDDEN_CHANNELS = json.load(f)
           
 
     # ----------------------------------------------------------------------
@@ -179,7 +182,7 @@ def set_current_class(cls_name):
 
 
 
-def get_current(img_class=None):
+def get_current(class_name=None):
     """
     Retrieve the instruction dictionary for a given class in the current image.
 
@@ -187,7 +190,7 @@ def get_current(img_class=None):
     :type cls: str
     :rtype: dict | int
     """
-    cls = CURRENT_CLASS if img_class is None else img_class
+    cls = CURRENT_CLASS if class_name is None else class_name
     return CLASS_INSTRUCTIONS[CURRENT_IMAGE][cls]
 
 

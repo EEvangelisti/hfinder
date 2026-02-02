@@ -39,6 +39,7 @@ import sys
 import ast
 import json
 import pydoc
+import builtins
 import importlib.resources as ir
 from hfinder.core import log as HF_log
 from hfinder.core import utils as HF_utils
@@ -273,7 +274,7 @@ def load_class_list():
     cat_arg = get("category") or ""
     if cat_arg:
         names = [c.strip().lower() for c in cat_arg.split(",") if c.strip()]
-        return sorted(set(names))
+        return sorted(builtins.set(names))
 
     class_dir = os.path.join(get("tiff_dir"), "hf_classes")
     if not os.path.isdir(class_dir):
