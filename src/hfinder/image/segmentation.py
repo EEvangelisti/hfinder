@@ -42,6 +42,7 @@ import os
 import cv2
 import json
 import scipy
+import inspect
 import skimage
 import numpy as np
 import matplotlib.pyplot as plt
@@ -58,7 +59,9 @@ except ImportError:
 from skimage.feature import peak_local_max
 from skimage.morphology import closing
 from skimage.morphology import remove_small_holes
+_sigRSH = inspect.signature(remove_small_holes)
 from skimage.morphology import remove_small_objects
+_sigRSO = inspect.signature(remove_small_objects)
 from hfinder.core import log as HF_log
 from hfinder.core import geometry as HF_geometry
 from hfinder.session import folders as HF_folders
@@ -297,10 +300,23 @@ def fill_gaps(binary, area_threshold=50, radius=1, connectivity=2):
     :rtype: np.ndarray
     :raises AssertionError: If ``binary`` is not boolean.
     """
+
     assert is_bool(binary), "(HFinder) Assert Failure: fill_gaps"
-    filled_bool = remove_small_holes(binary,
-                                     max_size=area_threshold,
-                                     connectivity=connectivity)
+
+    # Recent modification of scikit-image
+    if "max_size" in _sigRSH.parameters:
+        filled_bool = remove_small_holes(
+            binary,
+            max_size=area_threshold,
+            connectivity=connectivity
+        )
+    else:
+        filled_bool = remove_small_holes(
+            binary,
+            area_threshold=area_threshold,
+            connectivity=connectivity
+        )
+
     disk = skimage.morphology.disk(radius)
     closed_bool = closing(filled_bool, footprint=disk)
     return closed_bool
@@ -325,10 +341,24 @@ def remove_noise(binary, max_size=20, connectivity=2):
     :rtype: np.ndarray
     :raises AssertionError: If ``binary`` is not a boolean mask.
     """
+
     assert is_bool(binary), "(HFinder) Assert Failure: remove_noise"
-    return remove_small_objects(binary,
-                                max_size=max_size,
-                                connectivity=connectivity)
+    
+    # Recent modification of scikit-image
+    if "max_size" in _sigRSO.parameters:
+        cleaned = remove_small_objects(
+            binary,
+            max_size=max_size,
+            connectivity=connectivity
+        )
+    else:
+        cleaned = remove_small_objects(
+            binary,
+            min_size=max_size,
+            connectivity=connectivity
+        )
+
+    return cleaned
 
 
 

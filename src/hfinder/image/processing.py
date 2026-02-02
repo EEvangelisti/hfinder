@@ -131,9 +131,12 @@ def resize_multichannel_image(img):
 
     size = HF_settings.get("size")
  
-    # Determine if we have a z-axis or just channels
+    # For Z-stacks, (Z, C, H, W) → max intensity projection over Z → (C, H, W)
     if img.ndim == 4:
-        n, c, h, w = img.shape
+        HF_log.info(f"Z-stack detected (Z = {img.shape[1]}): calculating maximum intensity projection")
+        img = np.max(img, axis=0)
+        n = 1
+        c, h, w = img.shape
     else:
         n = 1
         c, h, w = img.shape
@@ -142,6 +145,7 @@ def resize_multichannel_image(img):
     resized = np.empty((n * c, *(size, size)), dtype=img.dtype)
     
     # Resize each frame individually
+    # Note: for now n = 1, but this may change later.
     for n_i in range(n):
         for c_i in range(c):
             index = n_i * c + c_i # global frame index
