@@ -16,7 +16,7 @@ Public API
 - to_bool(image): Convert array to boolean mask.
 - to_uint8(image): Convert array to uint8 [0, 255].
 - fill_gaps(binary, area_threshold=50, radius=1, connectivity=2): Fill holes + optional closing.
-- remove_noise(binary, min_size=20, connectivity=2): Remove small components.
+- remove_noise(binary, max_size=20, connectivity=2): Remove small components.
 - noise_and_gaps(img): remove_noise ∘ fill_gaps, returns uint8 mask.
 - filter_contours_min_area(contours): Keep contours above min area.
 - simplify_contours(contours, epsilon=0.5): RDP polygon simplification.
@@ -56,7 +56,7 @@ except ImportError:
     triangulate = None
 
 from skimage.feature import peak_local_max
-from skimage.morphology import binary_closing
+from skimage.morphology import closing
 from skimage.morphology import remove_small_holes
 from skimage.morphology import remove_small_objects
 from hfinder.core import log as HF_log
@@ -282,7 +282,7 @@ def fill_gaps(binary, area_threshold=50, radius=1, connectivity=2):
 
     Pipeline:
         1) ``remove_small_holes`` fills cavities with area ≤ ``area_threshold``.
-        2) If ``radius > 0``, apply ``binary_closing`` using a disk of given 
+        2) If ``radius > 0``, apply ``closing`` using a disk of given 
            ``radius`` (pixels).
 
     :param binary: Boolean mask (True = foreground). Convert with ``to_bool`` if needed.
@@ -299,10 +299,10 @@ def fill_gaps(binary, area_threshold=50, radius=1, connectivity=2):
     """
     assert is_bool(binary), "(HFinder) Assert Failure: fill_gaps"
     filled_bool = remove_small_holes(binary,
-                                     area_threshold=area_threshold,
+                                     max_size=area_threshold,
                                      connectivity=connectivity)
     disk = skimage.morphology.disk(radius)
-    closed_bool = binary_closing(filled_bool, footprint=disk)
+    closed_bool = closing(filled_bool, footprint=disk)
     return closed_bool
 
 
@@ -311,14 +311,14 @@ def fill_gaps(binary, area_threshold=50, radius=1, connectivity=2):
 #   disk1 = skimage.morphology.disk(1)
 #   clean = skimage.morphology.opening(mask_bool, footprint=disk1)
 #   clean = skimage.filters.median(mask_bool, footprint=disk1).astype(bool)
-def remove_noise(binary, min_size=20, connectivity=2):
+def remove_noise(binary, max_size=20, connectivity=2):
     """
     Remove small white connected components (“speckles”) by minimum area.
 
     :param binary: Boolean mask (True = foreground).
     :type binary: np.ndarray
-    :param min_size: Minimum area (in pixels) for components to keep.
-    :type min_size: int
+    :param max_size: Maximum area (in pixels) for components to remove.
+    :type max_size: int
     :param connectivity: Pixel connectivity (2 → 8-connectivity in 2D).
     :type connectivity: int
     :returns: Boolean mask with small components removed.
@@ -327,7 +327,7 @@ def remove_noise(binary, min_size=20, connectivity=2):
     """
     assert is_bool(binary), "(HFinder) Assert Failure: remove_noise"
     return remove_small_objects(binary,
-                                min_size=min_size,
+                                max_size=max_size,
                                 connectivity=connectivity)
 
 
