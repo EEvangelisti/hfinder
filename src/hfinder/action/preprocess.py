@@ -278,7 +278,7 @@ def simplify_and_resample_polygons(polygons_per_channel):
 
 
 
-def generate_masks_and_polygons(channels, n, c, ratio, allowed_category_names):
+def generate_masks_and_polygons(channels, n, c, ratio, classes):
     """
     Generate segmentation masks and polygon annotations per class, for each
     frame or image channel, based on class-specific directives.
@@ -307,13 +307,14 @@ def generate_masks_and_polygons(channels, n, c, ratio, allowed_category_names):
     results = defaultdict(list)
     masks_dir = HF_folders.get_masks_dir()
     base = HF_settings.get("current_image.base")
-    allowed = set(allowed_category_names) if allowed_category_names else None
+    # Q1 = le else devrait être else set(HF_ImageInfo.get_classes())
+    #allowed = set(allowed_category_names) if allowed_category_names else None
 
-    for cls in HF_ImageInfo.get_classes():
-        if allowed is not None and cls not in allowed:
-            continue
- 
+    for cls in classes:
         HF_ImageInfo.set_current_class(cls)
+        if HF_ImageInfo.get_current(cls) == -1:
+            continue
+
         # Per-class directives
         ch = HF_ImageInfo.get_channel()
         threshold = HF_ImageInfo.get_threshold()
@@ -628,14 +629,15 @@ def build_full_training_dataset():
 
     :rtype: None
     """
-    data_dir = HF_settings.get("tiff_dir")
+    
+    # Retrieve all TIFF files.
+    tiff_dir = HF_settings.get("tiff_dir")
+    image_paths = sorted(glob(os.path.join(tiff_dir, "*.tif")) + glob(os.path.join(tiff_dir, "*.tiff")))
 
-    # Retrieve all TIFFS, but may filter out some if a manifest file is present.
-    image_paths = sorted(glob(os.path.join(data_dir, "*.tif")) + glob(os.path.join(data_dir, "*.tiff")))
-    manifest_path = HF_settings.get("manifest")
-    manifest = None
-
-    if manifest_path:
+    # May filter out some files if a manifest file is present.
+    mf = HF_settings.get("manifest")
+    if mf is not None:
+        manifest_path = os.path.join(tiff_dir, "hf_instructions", mf)
         with open(manifest_path, "r", encoding="utf-8") as f:
             manifest = set(json.load(f))
         image_paths = [p for p in image_paths if os.path.basename(p) in manifest]
@@ -644,12 +646,13 @@ def build_full_training_dataset():
         # Report any missing TIFF file compared to the manifest.
         missing = sorted(manifest - {os.path.basename(p) for p in image_paths})
         if missing:
-            HF_log.warn(f"{len(missing)} manifest images not found in tiff_dir (showing up to 10): {missing[:10]}")
+            HF_log.warn(f"{len(missing)} manifest images not found in {tiff_dir} (showing up to 10): {missing[:10]}")
 
-
+    # Load allowed classes
     classes = HF_settings.load_class_list()
     allowed_category_names = set(classes)
     #HF_log.info(f"Active classes: {classes}")
+
     HF_folders.write_yolo_yaml(classes)
     HF_ImageInfo.initialize()
 
@@ -658,10 +661,12 @@ def build_full_training_dataset():
         HF_ImageInfo.set_current_image(img_name)
         img_base = HF_ImageInfo.get_current_base()
 
+        # Skip image if it does not contain annotations.
         if not HF_ImageInfo.image_has_instructions():
             HF_log.warn(f"Skipping file {img_name} - no annotations")
             continue
 
+        # Skip images with unsupported geometry.
         img = tifffile.imread(img_path)
         if not HF_geometry.is_valid_image_format(img):
             HF_log.warn(f"Skipping file {img_name}, wrong shape {img.shape}")
@@ -669,22 +674,23 @@ def build_full_training_dataset():
 
         # Resize channels to the configured size; get ratio and (n, c)
         channels, ratio, (n, c) = HF_ImageOps.resize_multichannel_image(img)   
-        polygons_per_channel = generate_masks_and_polygons(channels, n, c, ratio, allowed_category_names)
-        
-        # Post-traitement des polygones pour simplifier et homogénéiser les contours
-        polygons_per_channel = simplify_and_resample_polygons(polygons_per_channel)
 
-        # QA overlays then dataset generation
-        generate_contours(img_base, polygons_per_channel, channels, classes)     
-        export_yolo_images_and_labels(img_base, channels, polygons_per_channel)
-
-        # Optional MIP export when multiple Z-slices exist
+        # In case of z-stacks, calculates maximum projection.
         # FIXME: currently deactivated because it is not satisfactory.
         if n > 1 and False:
             build_mip_dataset_from_stack(
                 img_name, img_base, img, polygons_per_channel,
                 classes, n, c, ratio
             )
+
+        polygons_per_channel = generate_masks_and_polygons(channels, n, c, ratio, allowed_category_names)
+        
+        # Polygon post-processing to simplify and homogeneize vertices.
+        polygons_per_channel = simplify_and_resample_polygons(polygons_per_channel)
+
+        # QA overlays then dataset generation
+        generate_contours(img_base, polygons_per_channel, channels, classes)     
+        export_yolo_images_and_labels(img_base, channels, polygons_per_channel)
 
     # Split train/val at the end so both single-plane and MIP outputs are included
     HF_DatasetSplit.split_train_val()
