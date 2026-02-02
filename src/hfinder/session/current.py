@@ -166,7 +166,7 @@ def set_current_image(img_name):
     """
     global CURRENT_IMAGE
     CURRENT_IMAGE = img_name
-    HF_log.info(f"Processing {img_name}")
+    HF_log.info(f"Processing image '{img_name}'")
 
 
 def set_current_class(cls_name):
