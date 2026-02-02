@@ -335,8 +335,6 @@ def generate_masks_and_polygons(channels, n, c, ratio, classes):
 
         elif poly_json is not None:
             # Load user-provided segmentation polygons (single-plane only)
-            if n > 1:
-                HF_log.fail(f"File '{base}.tif' - applying user segmentation to Z-stacks has not been implemented yet")
             json_path = os.path.join(HF_settings.get("tiff_dir"), poly_json)
             polygons = HF_segmentation.channel_custom_segment(json_path, ratio, {cls})
             results[ch].append((cls, polygons))
@@ -506,113 +504,6 @@ def export_yolo_images_and_labels(base, channels, polygons_per_channel):
         HF_utils.save_yolo_segmentation_label(label_path, annotations, classes)
 
 
-
-def build_mip_dataset_from_stack(img_name, base, stack, polygons_per_channel, class_ids, n, c, ratio):
-    """
-    Build a Max Intensity Projection (MIP) across Z and export a mini-dataset.
-
-    Steps per channel index 0..c-1:
-      - Compute the MIP across n frames → resize to target size.
-      - Aggregate polygons across all Z-slices for each class.
-      - Fill a global mask per class and convert to YOLO polygons.
-      - Save masks and overlays; export a small MIP-based dataset.
-
-    :param img_name: Original image filename (for bookkeeping).
-    :type img_name: str
-    :param base: Base name for outputs (suffix "_MIP" is added).
-    :type base: str
-    :param stack: Original image stack (ndarray with Z).
-    :type stack: np.ndarray
-    :param polygons_per_channel: Dict channel_idx → [(class_name, [polys...]), ...].
-    :type polygons_per_channel: dict[int, list[tuple[str, list[list[float]]]]]
-    :param class_ids: Mapping class name → ID.
-    :type class_ids: dict[str, int]
-    :param n: Number of Z frames.
-    :type n: int
-    :param c: Channels per frame.
-    :type c: int
-    :param ratio: Resize factor used elsewhere (kept for parity).
-    :type ratio: float
-    :rtype: None
-
-    :notes:
-        - This routine assumes square targets (size × size).
-        - It aggregates instance polygons across Z before re-vectorizing.
-    """
-    mip = np.max(stack, axis=0)   # shape: (C, H, W)
-    stacked_channels = [
-        cv2.resize(mip[ch], (0, 0), fx=ratio, fy=ratio, interpolation=cv2.INTER_AREA)
-        for ch in range(c)
-    ]
-    size = HF_settings.get("size")
-    assert (stacked_channels[0].shape == (size, size))
-
-    masks_dir = HF_folders.get_masks_dir()
-    contours_dir = HF_folders.get_contours_dir()
-
-    # For each channel of the MIP, merge polygons from all Z-slices
-    polygons_per_stacked_channel = defaultdict(list)
-    for ch in range(c):
-        # 1-based indices of frames for this channel across Z: 1, 1+c, 1+2c, ...
-        indices = [j + 1 for j in range(ch, n * c, c)]  # 1, 1+c, 1+2c, ...
-        
-        # Collect per-slice polygons for the channel: [(label, [polys...]), ...]
-        polygons_subset = [polygons_per_channel.get(idx, []) for idx in indices]
-
-        # Build a fused mask per class from all Z-slice polygons
-        allowed_items = [(x, y) for x, y in class_ids.items() if HF_ImageInfo.allows_MIP_generation(x)]
-        for class_name, class_id in allowed_items:
-            # Accumulate polygons (pixel coords) for this class across slices
-            all_polys_px = []
-            for per_slice in polygons_subset:
-                for label, polys_list in per_slice:
-                    if label != class_name:
-                        continue
-                    # polys_list est une liste de polygones plats
-                    for flat in polys_list:
-                        if not flat: 
-                            continue
-                        # Convert normalized flat polygon to pixel coordinates
-                        pts = HF_geometry.flat_to_pts_xy(flat)   # (N, 2)
-                        if pts.shape[0] >= 3:
-                            all_polys_px.append(pts)
-
-            # If nothing accumulated, skip this class/channel
-            if not all_polys_px:
-                continue
-
-            # Fused binary mask for the class on the MIP channel
-            mask = np.zeros((size, size), dtype=np.uint8)
-            cv2.fillPoly(mask, all_polys_px, 255)
-
-            clean_mask = HF_segmentation.noise_and_gaps(mask)
-            # Persist the fused class mask (for QA or reuse)
-            mask_path = os.path.join(masks_dir, f"{base}_MIP_{class_name}_mask.png")
-            cv2.imwrite(mask_path, clean_mask)
-            # Extract refined contours and convert to YOLO polygons
-            final_contours = HF_segmentation.mask_to_polygons(clean_mask)
-            yolo_polygons = HF_geometry.contours_to_yolo_polygons(final_contours)
- 
-            ch_key = ch + 1   # 1-based
-            polygons_per_stacked_channel[ch_key].append((class_name, yolo_polygons))
-
-    # Compose overlays and export a small MIP dataset
-    stacked_channels_dict = {i+1: stacked_channels[i] for i in range(c)}
-    generate_contours(
-        base + "_MIP",
-        polygons_per_stacked_channel, 
-        stacked_channels_dict,
-        class_ids
-    )  
-
-    export_yolo_images_and_labels(
-        base + "_MIP",
-        channels=stacked_channels_dict,
-        polygons_per_channel=polygons_per_stacked_channel
-    )
-
-
-
 def build_full_training_dataset():
     """
     End-to-end dataset generation from a folder of TIFFs.
@@ -623,8 +514,7 @@ def build_full_training_dataset():
       - For each image:
           * Validate shape; resize/stack channels.
           * Create class-specific masks/annotations.
-          * Save overlays and fused RGB training examples (+ labels).
-          * Optionally export MIP-based dataset if multiple Z-frames.
+          * Save overlays and labels.
       - Finally split train/val per `validation_frac`.
 
     :rtype: None
@@ -632,7 +522,10 @@ def build_full_training_dataset():
     
     # Retrieve all TIFF files.
     tiff_dir = HF_settings.get("tiff_dir")
-    image_paths = sorted(glob(os.path.join(tiff_dir, "*.tif")) + glob(os.path.join(tiff_dir, "*.tiff")))
+    image_paths = sorted(
+        glob(os.path.join(tiff_dir, "*.tif")) + 
+        glob(os.path.join(tiff_dir, "*.tiff"))
+    )
 
     # May filter out some files if a manifest file is present.
     mf = HF_settings.get("manifest")
@@ -641,7 +534,7 @@ def build_full_training_dataset():
         with open(manifest_path, "r", encoding="utf-8") as f:
             manifest = set(json.load(f))
         image_paths = [p for p in image_paths if os.path.basename(p) in manifest]
-        HF_log.info(f"Manifest enabled: {len(image_paths)} images kept from {manifest_path}")
+        HF_log.info(f"Manifest: {len(image_paths)} images kept from {manifest_path}")
 
         # Report any missing TIFF file compared to the manifest.
         missing = sorted(manifest - {os.path.basename(p) for p in image_paths})
@@ -651,7 +544,7 @@ def build_full_training_dataset():
     # Load allowed classes
     classes = HF_settings.load_class_list()
     allowed_category_names = set(classes)
-    #HF_log.info(f"Active classes: {classes}")
+    HF_log.info(f"Active classes: {classes}")
 
     HF_folders.write_yolo_yaml(classes)
     HF_ImageInfo.initialize()
@@ -663,25 +556,18 @@ def build_full_training_dataset():
 
         # Skip image if it does not contain annotations.
         if not HF_ImageInfo.image_has_instructions():
-            HF_log.warn(f"Skipping file {img_name} - no annotations")
+            HF_log.warn(f"No annotations for {img_name} - SKIPPING")
             continue
 
         # Skip images with unsupported geometry.
         img = tifffile.imread(img_path)
         if not HF_geometry.is_valid_image_format(img):
-            HF_log.warn(f"Skipping file {img_name}, wrong shape {img.shape}")
+            HF_log.warn(f"File {img_name} shape ({img.shape}) is not allowed - SKIPPING")
             continue
 
-        # Resize channels to the configured size; get ratio and (n, c)
+        # Resize channels to the configured size
+        # Currently n is always 1, but we may change this in the future.
         channels, ratio, (n, c) = HF_ImageOps.resize_multichannel_image(img)   
-
-        # In case of z-stacks, calculates maximum projection.
-        # FIXME: currently deactivated because it is not satisfactory.
-        if n > 1 and False:
-            build_mip_dataset_from_stack(
-                img_name, img_base, img, polygons_per_channel,
-                classes, n, c, ratio
-            )
 
         polygons_per_channel = generate_masks_and_polygons(channels, n, c, ratio, allowed_category_names)
         
