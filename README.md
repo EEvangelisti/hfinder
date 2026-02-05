@@ -21,8 +21,6 @@ as [Makesense AI](https://www.makesense.ai/).
 
 ## Installation
 
-HFinder is distributed as a Python package and can be installed with `pip`.
-
 See the [Installation guide](INSTALL.md) for detailed instructions
 (including GPU/CPU support).
 
