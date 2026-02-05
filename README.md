@@ -16,7 +16,7 @@ end-to-end workflow from raw multi-channel TIFF images to consolidated
 predictions and ready-to-use annotations. The framework supports dataset 
 generation, model training, multi-model fusion, and result consolidation 
 into formats compatible with external annotation and visualization tools such 
-as [Makesense AI](https://www.makesense.ai/)..
+as [Makesense AI](https://www.makesense.ai/).
 
 
 ## Installation
