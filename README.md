@@ -1,13 +1,22 @@
 # HFinder
 
-HFinder is a modular and extensible pipeline for the detection, segmentation, 
-and analysis of filamentous microbes (e.g., fungi, oomycetes) and their 
-infection structures (such as haustoria) in confocal microscopy images. Built 
-around [YOLOv8](https://yolov8.com/), it provides a complete workflow from raw 
-multi-channel TIFFs to consolidated predictions and ready-to-use annotations.
-The pipeline supports dataset generation, model training, multi-fusion prediction, and 
-result consolidation into formats compatible with external tools such as 
-[Makesense AI](https://www.makesense.ai/).
+HFinder is a modular and extensible framework for the detection, segmentation, 
+and quantitative analysis of filamentous microbes (e.g. fungi, oomycetes) and 
+their infection structures (such as haustoria) in confocal microscopy images.
+
+The framework is designed to address the specific challenges posed by 
+plant-microbe interfaces, including sparse, anisotropic, and morphologically 
+heterogeneous structures imaged across multiple fluorescence channels. 
+Predictions are performed independently on individual channels and subsequently 
+reconciled through a biologically informed decision scheme, enabling 
+channel-aware quantitative analyses.
+
+Built on a [YOLOv8](https://yolov8.com/)-based object detection backbone, HFinder provides an 
+end-to-end workflow from raw multi-channel TIFF images to consolidated 
+predictions and ready-to-use annotations. The framework supports dataset 
+generation, model training, multi-model fusion, and result consolidation 
+into formats compatible with external annotation and visualization tools such 
+as [Makesense AI](https://www.makesense.ai/)..
 
 
 ## Installation
