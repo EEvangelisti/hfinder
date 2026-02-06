@@ -110,7 +110,7 @@ def extract_frame(img, ch=0, z=0, norm=normalize_channel):
 
 
 
-def resize_multichannel_image(img):
+def resize_multichannel_image(img, axes=None):
     """
     Resize a multi-channel or z/t-stack image to the configured square size.
 
@@ -130,16 +130,27 @@ def resize_multichannel_image(img):
     """
 
     size = HF_settings.get("size")
- 
-    # For Z-stacks, (Z, C, H, W) → max intensity projection over Z → (C, H, W)
+
     if img.ndim == 4:
-        HF_log.info(f"Z-stack detected (Z = {img.shape[1]}): calculating maximum intensity projection")
-        img = np.max(img, axis=0)
-        n = 1
-        c, h, w = img.shape
-    else:
-        n = 1
-        c, h, w = img.shape
+        # Robust Z MIP if axes are provided (e.g., from tifffile series.axes).
+        if axes is not None and "Z" in axes:
+            z = axes.index("Z")             
+        # Fallback: if no axes provided, assume the image shape is (Z, C, H, W).
+        else:
+            HF_log.warn(
+                f"4D image with unknown or missing Z axis (axes={axes}); "
+                "assuming shape is (Z, C, H, W) and projecting over axis 0"
+            )
+            z = 0
+
+        HF_log.info(
+            f"4D stack detected (axis={z}, len={img.shape[z]}): "
+            "calculating maximum intensity projection"
+        )
+        img = img.max(axis=z)
+
+    n = 1
+    c, h, w = img.shape
     
     # Preallocate resized array: flatten z and channel dims into one
     resized = np.empty((n * c, *(size, size)), dtype=img.dtype)
