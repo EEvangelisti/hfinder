@@ -5,9 +5,6 @@ into a YOLOv8-compatible segmentation dataset.
 This module implements the full annotation workflow: mask generation,
 polygon extraction, geometric refinement, visual QA rendering, and final
 export of RGB training images together with YOLO segmentation labels.
-Only well-defined, channel-wise training samples are produced; the former
-hue-fusion and noise-channel strategies have been removed for clarity and
-predictability.
 
 Overview
 --------
@@ -37,9 +34,7 @@ Overview
     to 3 channels when necessary), together with the corresponding YOLO
     `.txt` labels. Each channel is treated as an independent sample.
 
-7.  Optionally construct a Max-Intensity-Projection (MIP) mini-dataset
-    for Z-stacks. This pathway remains experimental and is currently not
-    enabled by default.
+7.  Construct a Max-Intensity-Projection (MIP) mini-dataset for Z-stacks.
 
 8.  After all images have been processed, perform a stratified
     train/validation split via :mod:`dataset_split`, preserving class
@@ -68,9 +63,8 @@ Public API
 
 Notes
 -----
-- Channels remain 1-based throughout, matching the UI conventions.
+- Channels remain 1-based throughout.
 - Polygon coordinates are normalized to the resized image dimensions.
-- JSON segmentations are currently supported only for single-plane images.
 - Degenerate or very small polygons may be removed during post-processing.
 """
 
@@ -139,7 +133,7 @@ def simplify_flat_polygon(flat, epsilon_rel, min_points):
     approx = cv2.approxPolyDP(cnt, eps, True).reshape(-1, 2)
 
     if approx.shape[0] < min_points:
-        # trop simplifié -> on garde la version d'origine
+        # when too simplified, keep the original polygon
         return flat
 
     return approx.flatten().tolist()
@@ -176,7 +170,7 @@ def resample_flat_polygon(flat, target_points):
     if n < 2:
         return flat
 
-    # on ferme explicitement le polygone
+    # close the polygon
     pts_closed = np.vstack([pts, pts[0]])
 
     # distances cumulées le long du contour
