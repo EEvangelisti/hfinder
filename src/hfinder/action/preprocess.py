@@ -301,9 +301,8 @@ def generate_masks_and_polygons(channels, n, c, ratio, classes):
     results = defaultdict(list)
     masks_dir = HF_folders.get_masks_dir()
     base = HF_settings.get("current_image.base")
-    # Q1 = le else devrait être else set(HF_ImageInfo.get_classes())
-    #allowed = set(allowed_category_names) if allowed_category_names else None
 
+    # Loop through active classes.
     for cls in classes:
         HF_ImageInfo.set_current_class(cls)
         if HF_ImageInfo.get_current(cls) == -1:
@@ -314,35 +313,47 @@ def generate_masks_and_polygons(channels, n, c, ratio, classes):
         threshold = HF_ImageInfo.get_threshold()
         poly_json = HF_ImageInfo.get_manual_segmentation()
 
+        # A fixed threshold is given.
         if threshold is not None:
-            # Custom (fixed) thresholding across a frame range
-            from_frame = HF_ImageInfo.from_frame(default=0)
-            to_frame = HF_ImageInfo.to_frame(default=n)
+            # Note: from_frame and to_frame are intended for precise extraction 
+            # of frame subsets from Z-stacks. This feature is currently inactive,
+            # as Z-stacks are flattened upstream using maximum-intensity projection.
+            from_frame = 0 # HF_ImageInfo.from_frame(default=0)
+            to_frame   = 1 # HF_ImageInfo.to_frame(default=n)
+            # As a consequence, the loop below only runs with i = 0, and frame == ch.
             for i in range(from_frame // c, to_frame // c + 1):
                 frame = i * c + ch
                 binary, polygons = HF_segmentation.channel_custom_threshold(channels[frame], threshold)
                 results[frame].append((cls, polygons))
-                name = f"{base}_{cls}_mask.png" if n == 1 \
-                       else f"{base}_frame{frame}_{cls}_mask.png"
+                # If n were greater than 1, the frame index would need to be included here:
+                # name = ... if n == 1 else f"{base}_frame{frame}_{cls}_mask.png"
+                name = f"{base}_{cls}_mask.png"
                 binary_output = os.path.join(masks_dir, name)
                 cv2.imwrite(binary_output, binary)
 
+        # The user provided polygons (e.g. from the makesense.ai website).
+        # As it is unclear how such annotations should be mapped to individual frames
+        # when n > 1, we assume n == 1 and therefore define frame == ch.
+        # This may need to be revisited in the future.
         elif poly_json is not None:
-            # Load user-provided segmentation polygons (single-plane only)
+            assert n == 1
+            frame = ch
             json_path = os.path.join(HF_settings.get("tiff_dir"), poly_json)
             polygons = HF_segmentation.channel_custom_segment(json_path, ratio, {cls})
-            results[ch].append((cls, polygons))
+            results[frame].append((cls, polygons))
 
+        # Automatic thresholding as a fallback
         else:
-            # Automatic thresholding as a fallback
-            from_frame = HF_ImageInfo.from_frame(default=0)
-            to_frame = HF_ImageInfo.to_frame(default=n)
+            # Same remarks as above for from_frame, to_frame, and the loop.
+            from_frame = 0 # HF_ImageInfo.from_frame(default=0)
+            to_frame   = 1 # HF_ImageInfo.to_frame(default=n)
             for i in range(from_frame // c, to_frame // c + 1):
                 frame = i * c + ch
                 binary, polygons = HF_segmentation.channel_auto_threshold(channels[frame])
                 results[frame].append((cls, polygons))
-                name = f"{base}_{cls}_mask.png" if n == 1 \
-                       else f"{base}_frame{frame}_{cls}_mask.png"
+                # If n were greater than 1, the frame index would need to be included here:
+                # name = ... if n == 1 else f"{base}_frame{frame}_{cls}_mask.png"
+                name = f"{base}_{cls}_mask.png"
                 binary_output = os.path.join(masks_dir, name)
                 cv2.imwrite(binary_output, binary)
 
@@ -379,13 +390,13 @@ def generate_contours(base, polygons_per_channel, channels, classes):
             # Stable palette if class set is the same (order-independent)
             hsv_palette = HF_palette.get_random_palette(hash_data="|".join(unique_classes))
 
-            def hsv_to_bgr(h, s, v):
+            def hsv_to_rgb(h, s, v):
                 r, g, b = colorsys.hsv_to_rgb(h, s, v)
-                return (int(r * 255), int(g * 255), int(b * 255))  # OpenCV uses BGR
+                return (int(r * 255), int(g * 255), int(b * 255))
 
             # Map each class to a palette color (cycle if more classes than palette size)
             class_colors = {
-                cn: hsv_to_bgr(*hsv_palette[i % len(hsv_palette)])
+                cn: hsv_to_rgb(*hsv_palette[i % len(hsv_palette)])
                 for i, cn in enumerate(unique_classes)
             }
         else:
@@ -514,7 +525,7 @@ def build_full_training_dataset():
     :rtype: None
     """
     
-    # Retrieve all TIFF files.
+    # Retrieve all TIF/TIFF files in the input directory.
     tiff_dir = HF_settings.get("tiff_dir")
     image_paths = sorted(
         glob(os.path.join(tiff_dir, "*.tif")) + 
@@ -535,14 +546,14 @@ def build_full_training_dataset():
         if missing:
             HF_log.warn(f"{len(missing)} manifest images not found in {tiff_dir} (showing up to 10): {missing[:10]}")
 
-    # Load allowed classes
+    # Load allowed classes.
     classes = HF_settings.load_class_list()
     allowed_category_names = set(classes)
     HF_log.info(f"Active classes: {classes}")
-
     HF_folders.write_yolo_yaml(classes)
     HF_ImageInfo.initialize()
 
+    # Preprocess input images.
     for img_path in image_paths:
         img_name = os.path.basename(img_path)
         HF_ImageInfo.set_current_image(img_name)
@@ -560,17 +571,18 @@ def build_full_training_dataset():
             continue
 
         # Resize channels to the configured size
-        # Currently n is always 1, but we may change this in the future.
+        # Note: for now n = 1, but we may activate individual frame processing in the future.
         channels, ratio, (n, c) = HF_ImageOps.resize_multichannel_image(img)   
 
+        # Step 1: Retrieve polygons or generate it from masks.
+        # Step 2: Polygon post-processing to simplify and homogeneize vertices.
         polygons_per_channel = generate_masks_and_polygons(channels, n, c, ratio, allowed_category_names)
-        
-        # Polygon post-processing to simplify and homogeneize vertices.
         polygons_per_channel = simplify_and_resample_polygons(polygons_per_channel)
 
-        # QA overlays then dataset generation
-        generate_contours(img_base, polygons_per_channel, channels, classes)     
+        # Step 1: Generate overlays for quality assessment.
+        # Step 2: Save images and labels.
+        generate_contours(img_base, polygons_per_channel, channels, classes)
         export_yolo_images_and_labels(img_base, channels, polygons_per_channel)
 
-    # Split train/val at the end so both single-plane and MIP outputs are included
+    # Split image dataset into training and validation subsets.
     HF_DatasetSplit.split_train_val()
