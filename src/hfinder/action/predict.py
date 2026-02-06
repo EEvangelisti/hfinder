@@ -231,52 +231,49 @@ def channel_scores(det_subset):
 
 
 
-def _get_model():
-    model = HSettings.get("model")
-    if not model:
-        HLog.fail("Model needed to perform predictions")
-    if not os.path.exists(model):
-        HLog.fail(f"Model file not found: {model}")
-    return YOLO(model)
-
-
-
 def run():
     """
     Run full prediction pipeline:
-      - Load YOLO model.
-      - Generate fused images from TIFFs.
-      - Predict on fusions.
+      - Extract individual channels from TIFFs.
+      - Perform YOLO predictions.
       - Consolidate detections.
       - Save outputs (consolidated.json, coco.json).
 
     :rtype: None
     """
 
-    model = _get_model()
+    # Retrieve YOLO model.
+    model_path = HSettings.get("model")
+    if not model_path:
+        HLog.fail("Model needed to perform predictions")
+    if not os.path.exists(model_path):
+        HLog.fail(f"Model file not found: {model_path}")
+    model = YOLO(model_path)
 
-    # Settings
+    # Inference settings (confidence, image size, and batch size)
     conf = HSettings.get("confidence")
     imgsz = HSettings.get("size")
     batch = HSettings.get("batch")
 
-    # Retrieve class names from a YAML file (e.g., generated during training)
+    # Load (class id <-> name) mapping from the dataset YAML (kept stable across runs).
     yaml_path = HSettings.get("yaml")
     if not os.path.isfile(yaml_path):
         HLog.fail(f"YAML file not found: {yaml_path}")
-    class_ids = HUtils.load_class_definitions_from_yaml(yaml_path)  # {"name": id}
+    class_ids = HUtils.load_class_definitions_from_yaml(yaml_path)
     id_to_name = {v: k for k, v in class_ids.items()}
 
+    # Optional whitelist of class pairs allowed to be overlaid when co-occurring 
+    # (JSON list of name pairs, e.g., [["haustoria", "hyphae"]]).
     try:
         wl_raw = HSettings.get("overlay_whitelist") or "[]"
-        wl_pairs = json.loads(wl_raw)  # e.g. [["haustoria","hyphae"]]
+        wl_pairs = json.loads(wl_raw)
     except Exception:
         wl_pairs = []
     whitelist_ids = build_whitelist_ids(wl_pairs, class_ids)  # set of frozenset({idA,idB})
     if wl_pairs and not whitelist_ids:
-        HLog.warn("overlay_whitelist provided but no names matched class IDs from YAML.")
+        HLog.warn("Overlay whitelist provided but no names matched class IDs from YAML.")
 
-    # Torch settings
+    # On CPU, limit PyTorch thread parallelism to reduce oversubscription.
     device = resolve_device(HSettings.get("device"))
     if device == "cpu":
         torch.set_num_threads(max(1, (os.cpu_count() or 2) // 2))
@@ -286,7 +283,8 @@ def run():
     input_folder = HSettings.get("tiff_dir")
     if not input_folder or not os.path.isdir(input_folder):
         HLog.fail(f"Invalid directory: {input_folder}")
-    tiffs = sorted(glob(os.path.join(input_folder, "*.tif")) + glob(os.path.join(input_folder, "*.tiff")))
+    tiffs = sorted(glob(os.path.join(input_folder, "*.tif")) + \
+                   glob(os.path.join(input_folder, "*.tiff")))
     if not tiffs:
         HLog.warn(f"No TIFF files found in {input_folder}")
         return
