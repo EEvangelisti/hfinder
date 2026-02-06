@@ -313,7 +313,8 @@ def generate_masks_and_polygons(channels, n, c, ratio, classes):
         threshold = HF_ImageInfo.get_threshold()
         poly_json = HF_ImageInfo.get_manual_segmentation()
 
-        # A fixed threshold is given.
+        # A threshold is provided, either as a numeric value or as a method
+        # (e.g. Otsu or Isodata).
         if threshold is not None:
             # Note: from_frame and to_frame are intended for precise extraction 
             # of frame subsets from Z-stacks. This feature is currently inactive,
@@ -342,7 +343,7 @@ def generate_masks_and_polygons(channels, n, c, ratio, classes):
             polygons = HF_segmentation.channel_custom_segment(json_path, ratio, {cls})
             results[frame].append((cls, polygons))
 
-        # Automatic thresholding as a fallback
+        # Automatic thresholding as a fallback.
         else:
             # Same remarks as above for from_frame, to_frame, and the loop.
             from_frame = 0 # HF_ImageInfo.from_frame(default=0)
