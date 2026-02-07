@@ -238,6 +238,37 @@ def load_yolo_model():
     return YOLO(model_path)
 
 
+def prepare_frames_for_tiff(tif_path, project, tif_base):
+    out_dir = os.path.join(project, "predict", tif_base)
+    os.makedirs(out_dir, exist_ok=True)
+    ratio, frames, (H, W), (n, c) = build_channel_jpegs_from_tiff(tif_path, out_dir)
+    orig_W = int(round(W / ratio))
+    orig_H = int(round(H / ratio))
+    scale_factor = 1.0 / ratio
+    fusion_paths = [f["path"] for f in frames]
+    fusion_meta = {f["path"]: f for f in frames}
+    if not fusion_paths:
+        HF_log.warn(f"Skipping file '{tif_file}'")
+        continue
+    HF_log.info(f"Processing '{tif_file}'")
+
+
+def predict_on_frames(model, fusion_paths, project, tif_base, conf, imgsz, batch, device):
+    return model.predict(
+        source=fusion_paths,
+        batch=batch,
+        save=True,            # saves overlays into runs/predict/<tif_base>/
+        iou=0.5,
+        project=project,
+        name=os.path.join("predict", tif_base),
+        conf=conf,
+        imgsz=imgsz,
+        device=device,
+        verbose=False,
+        retina_masks=True     # better polygon quality
+    )
+
+
 def collect_detections(results, fusion_paths, fusion_meta, W, H):
     all_dets = []
     for img_path, r in zip(fusion_paths, results):
@@ -277,6 +308,133 @@ def collect_detections(results, fusion_paths, fusion_meta, W, H):
 
             all_dets.append(det)
 
+
+def consolidate_to_coco(all_dets, frames, class_ids, whitelist_ids, tif_file, W, H, scale_factor):
+    # --- Channel attribution -------------------------------------------------
+    # We treat each confocal channel as an independent "candidate explanation" of the image.
+    # Detections are grouped by channel and each channel is scored by class evidence.
+    #
+    # Key idea:
+    #   one channel ≈ one fluorophore ≈ one dominant class (plus optional whitelist partners).
+    #
+    # This is semantic consolidation (class/channel assignment), not geometric ensembling:
+    # we do NOT merge boxes across channels based on IoU; we select which channel/class
+    # combinations are allowed to contribute annotations.
+    # -------------------------------------------------------------------------
+    
+    # a) Build detection subsets per channel (skip empty channels).
+    subsets = []
+    for ch in range(len(frames)):
+        det_subset = [det for det in all_dets if det["channel"] == ch]
+        if not det_subset:
+            continue
+        subsets.append((ch, det_subset))
+    
+    # b) Score each channel: compute per-class cumulative score and dominant class.
+    # channel_scores() returns:
+    #   - best_cls: argmax_c sum(conf^n) (or log scoring)
+    #   - best_cls_score: that max score
+    #   - total_score: sum over classes
+    #   - scores: per-class score map
+    subset_info = []
+    for ch, det_subset in subsets:
+        best_cls, best_cls_score, total_score, scores = channel_scores(det_subset)
+        # Guardrail (NOT IMPLEMENTED): reject ambiguous channels.
+        # dominance = best_cls_score / max(total_score, 1e-12)
+        # if dominance < DOMINANCE_MIN:
+        #     continue
+        subset_info.append((ch, det_subset, best_cls, best_cls_score, total_score, scores))
+    
+    # c) Rank channels from strongest to weakest.
+    # Primary: dominant class evidence, Secondary: overall evidence, Tertiary: detection count.
+    subset_info.sort(key=lambda t: (t[3], t[4], len(t[1])), reverse=True)
+    
+    # COCO skeleton
+    coco = coco_skeleton(class_ids)
+    image_id = 1
+    coco["images"].append({
+        "id": image_id,
+        "file_name": tif_file,
+        "width":  int(W * scale_factor),
+        "height": int(H * scale_factor),
+    })
+    ann_id = 1  # global per TIFF
+    
+    # d) Traverse channels in ranked order and decide which classes are allowed to survive.
+    # already_assigned tracks dominant/kept classes already claimed by stronger channels.
+    already_assigned = set()
+    for ch, subset, best, best_score, total_score, scores in subset_info:
+        if not scores:
+            continue
+    
+        # Classes predicted in this channel.
+        present = set(scores.keys())
+    
+        # If this channel's dominant class was already claimed by a stronger channel,
+        # we only keep this channel if it supports a whitelist-approved co-occurrence
+        # (i.e., two classes allowed to overlay in the same acquisition context).
+        # Otherwise, we keep the dominant class and optionally add whitelist partners
+        # (classes allowed to co-occur with the dominant one).
+        if best in already_assigned:
+            pairs = [
+                (c, a) for c in present for a in present
+                if c != a and frozenset({c, a}) in whitelist_ids
+            ]
+            if not pairs:
+                continue
+            c_star, a_star = max(pairs, key=lambda p: scores[p[0]] + scores[p[1]])
+            kept_set = {c_star, a_star}
+        else:
+            partners = {c for c in present if frozenset({c, best}) in whitelist_ids}
+            partners &= present
+            kept_set = {best} | (partners if partners else set())
+    
+        already_assigned |= kept_set
+    
+        subset = [d for d in subset if d["cls"] in kept_set]
+        if not subset:
+            continue
+    
+        filtered = [
+            d for d in subset
+            if (d["cls"] == best) or (frozenset({d["cls"], best}) in whitelist_ids)
+        ]
+        if not filtered:
+            continue
+    
+        # Rescale
+        rescaled = []
+        for d in filtered:
+            rescaled.append({
+                "cls": int(d["cls"]),
+                "conf": float(d["conf"]),
+                "xyxy": HF_geometry.rescale_box_xyxy(d["xyxy"], scale_factor),
+                "segs": [HF_geometry.rescale_seg_flat(seg, scale_factor) for seg in (d.get("segs") or [])],
+            })
+    
+        for d in rescaled:
+            bbox_xywh = HF_geometry.bbox_xyxy_to_xywh(d["xyxy"])
+            if d["segs"]:
+                area = float(sum(HF_geometry.poly_area_xy(seg) for seg in d["segs"]))
+                segmentation = d["segs"]
+            else:
+                area = float(bbox_xywh[2] * bbox_xywh[3])
+                segmentation = []
+    
+            coco["annotations"].append({
+                "id": ann_id,
+                "image_id": image_id,
+                "category_id": d["cls"],
+                "bbox": [round(v, 2) for v in bbox_xywh],
+                "area": round(area, 2),
+                "segmentation": segmentation,
+                "iscrowd": 0,
+                "confidence": round(d["conf"], 4),
+                "hf_channel": ch, # ch ici = canal du subset_info (OK, 1-based si tes frames le sont)
+            })
+            ann_id += 1
+
+    return coco
 
 
 def run():
@@ -379,163 +537,18 @@ def run():
     for tif_path in tiffs:
         tif_file = os.path.basename(tif_path)
         tif_base = os.path.splitext(tif_file)[0]
-        out_dir = os.path.join(project, "predict", tif_base)
-        os.makedirs(out_dir, exist_ok=True)
+        out_dir, ratio, frames, H, W, scale_factor, fusion_paths, fusion_meta = prepare_frames_for_tiff(tif_path, project, tif_base)
+  
+        # Run predictions on all frames
+        results = predict_on_frames(model, fusion_paths, project, tif_base, conf, imgsz, batch, device)
 
-        # 1) Save individual channels as images for prediction
-        ratio, frames, (H, W), (n, c) = build_channel_jpegs_from_tiff(tif_path, out_dir)
-        orig_W = int(round(W / ratio))
-        orig_H = int(round(H / ratio))
-        scale_factor = 1.0 / ratio
-        fusion_paths = [f["path"] for f in frames]
-        fusion_meta = {f["path"]: f for f in frames}
-        if not fusion_paths:
-            HF_log.warn(f"Skipping file '{tif_file}'")
-            continue
-        HF_log.info(f"Processing '{tif_file}'")
-
-        # 2) Run predictions on all frames
-        results = model.predict(
-            source=fusion_paths,
-            batch=batch,
-            save=True,            # saves overlays into runs/predict/<tif_base>/
-            iou=0.5,
-            project=project,
-            name=os.path.join("predict", tif_base),
-            conf=conf,
-            imgsz=imgsz,
-            device=device,
-            verbose=False,
-            retina_masks=True     # better polygon quality
-        )
-
-        # 3) Collect detections (boxes + polygons)
+        # Collect detections (boxes + polygons)
         all_dets = collect_detections(results, fusion_paths, fusion_meta, W, H)
-       
-        # --- Channel attribution -------------------------------------------------
-        # We treat each confocal channel as an independent "candidate explanation" of the image.
-        # Detections are grouped by channel and each channel is scored by class evidence.
-        #
-        # Key idea:
-        #   one channel ≈ one fluorophore ≈ one dominant class (plus optional whitelist partners).
-        #
-        # This is semantic consolidation (class/channel assignment), not geometric ensembling:
-        # we do NOT merge boxes across channels based on IoU; we select which channel/class
-        # combinations are allowed to contribute annotations.
-        # -------------------------------------------------------------------------
-        
-        # a) Build detection subsets per channel (skip empty channels).
-        subsets = []
-        for ch in range(len(frames)):
-            det_subset = [det for det in all_dets if det["channel"] == ch]
-            if not det_subset:
-                continue
-            subsets.append((ch, det_subset))
-       
-        # b) Score each channel: compute per-class cumulative score and dominant class.
-        # channel_scores() returns:
-        #   - best_cls: argmax_c sum(conf^n) (or log scoring)
-        #   - best_cls_score: that max score
-        #   - total_score: sum over classes
-        #   - scores: per-class score map
-        subset_info = []
-        for ch, det_subset in subsets:
-            best_cls, best_cls_score, total_score, scores = channel_scores(det_subset)
-            # Guardrail (NOT IMPLEMENTED): reject ambiguous channels.
-            # dominance = best_cls_score / max(total_score, 1e-12)
-            # if dominance < DOMINANCE_MIN:
-            #     continue
-            subset_info.append((ch, det_subset, best_cls, best_cls_score, total_score, scores))
 
-        # c) Rank channels from strongest to weakest.
-        # Primary: dominant class evidence, Secondary: overall evidence, Tertiary: detection count.
-        subset_info.sort(key=lambda t: (t[3], t[4], len(t[1])), reverse=True)
-       
-        # COCO skeleton
-        coco = coco_skeleton(class_ids)
-        image_id = 1
-        coco["images"].append({
-            "id": image_id,
-            "file_name": tif_file,
-            "width":  int(W * scale_factor),
-            "height": int(H * scale_factor),
-        })
-        ann_id = 1  # global per TIFF
+        # Consildate results and generate the output COCO file
+        coco = consolidate_to_coco(all_dets, frames, class_ids, whitelist_ids, tif_file, W, H, scale_factor)
 
-        # d) Traverse channels in ranked order and decide which classes are allowed to survive.
-        # already_assigned tracks dominant/kept classes already claimed by stronger channels.
-        already_assigned = set()
-        for ch, subset, best, best_score, total_score, scores in subset_info:
-            if not scores:
-                continue
-
-            # Classes predicted in this channel.
-            present = set(scores.keys())
-
-            # If this channel's dominant class was already claimed by a stronger channel,
-            # we only keep this channel if it supports a whitelist-approved co-occurrence
-            # (i.e., two classes allowed to overlay in the same acquisition context).
-            # Otherwise, we keep the dominant class and optionally add whitelist partners
-            # (classes allowed to co-occur with the dominant one).
-            if best in already_assigned:
-                pairs = [
-                    (c, a) for c in present for a in present
-                    if c != a and frozenset({c, a}) in whitelist_ids
-                ]
-                if not pairs:
-                    continue
-                c_star, a_star = max(pairs, key=lambda p: scores[p[0]] + scores[p[1]])
-                kept_set = {c_star, a_star}
-            else:
-                partners = {c for c in present if frozenset({c, best}) in whitelist_ids}
-                partners &= present
-                kept_set = {best} | (partners if partners else set())
-
-            already_assigned |= kept_set
-
-            subset = [d for d in subset if d["cls"] in kept_set]
-            if not subset:
-                continue
-
-            filtered = [
-                d for d in subset
-                if (d["cls"] == best) or (frozenset({d["cls"], best}) in whitelist_ids)
-            ]
-            if not filtered:
-                continue
-
-            # Rescale
-            rescaled = []
-            for d in filtered:
-                rescaled.append({
-                    "cls": int(d["cls"]),
-                    "conf": float(d["conf"]),
-                    "xyxy": HF_geometry.rescale_box_xyxy(d["xyxy"], scale_factor),
-                    "segs": [HF_geometry.rescale_seg_flat(seg, scale_factor) for seg in (d.get("segs") or [])],
-                })
-
-            for d in rescaled:
-                bbox_xywh = HF_geometry.bbox_xyxy_to_xywh(d["xyxy"])
-                if d["segs"]:
-                    area = float(sum(HF_geometry.poly_area_xy(seg) for seg in d["segs"]))
-                    segmentation = d["segs"]
-                else:
-                    area = float(bbox_xywh[2] * bbox_xywh[3])
-                    segmentation = []
-
-                coco["annotations"].append({
-                    "id": ann_id,
-                    "image_id": image_id,
-                    "category_id": d["cls"],
-                    "bbox": [round(v, 2) for v in bbox_xywh],
-                    "area": round(area, 2),
-                    "segmentation": segmentation,
-                    "iscrowd": 0,
-                    "confidence": round(d["conf"], 4),
-                    "hf_channel": ch, # ch ici = canal du subset_info (OK, 1-based si tes frames le sont)
-                })
-                ann_id += 1
-
+        # Save the output COCO file
         out_name = f"{tif_base}.json"
         with open(os.path.join(input_folder, out_name), "w") as f:
             json.dump(coco, f, indent=2)       
