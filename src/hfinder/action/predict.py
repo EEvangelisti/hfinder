@@ -230,6 +230,16 @@ def channel_scores(det_subset):
 
 
 def load_yolo_model():
+    """
+    Load the YOLO model specified in HFinder settings.
+
+    This helper validates the configured model path (HF_settings["model"])
+    and instantiates an ultralytics.YOLO object.
+
+    :return: Loaded YOLO model ready for inference.
+    :rtype: ultralytics.YOLO
+    :raises SystemExit: via HF_log.fail() if the model path is missing or invalid.
+    """
     model_path = HF_settings.get("model")
     if not model_path:
         HF_log.fail("Model needed to perform predictions")
@@ -238,7 +248,37 @@ def load_yolo_model():
     return YOLO(model_path)
 
 
-def prepare_frames_for_tiff(tif_path, project, tif_base):
+def prepare_frames_for_tiff(tif_path, tif_file, project, tif_base):
+    """
+    Prepare per-channel JPEG frames for a multichannel TIFF.
+
+    The TIFF is resized (via HF_ImageOps.resize_multichannel_image) and each channel
+    is exported as an RGB JPEG where R=G=B (grayscale encoded as RGB). The returned
+    `fusion_paths` are the inputs expected by YOLO inference.
+
+    Notes
+    -----
+    Despite historical naming, no channel "fusion" is performed here: one JPEG is
+    generated per channel.
+
+    :param tif_path: Path to the input TIFF file.
+    :type tif_path: str
+    :param project: Root run directory (HF_folders.get_runs_dir()).
+    :type project: str
+    :param tif_base: Basename used to create the output folder under runs/predict/.
+    :type tif_base: str
+    :param tif_file: Optional TIFF filename for logging (defaults to basename(tif_path)).
+    :type tif_file: str | None
+    :return: (out_dir, ratio, frames, H, W, scale_factor, fusion_paths, fusion_meta)
+             where:
+               - ratio is the resize ratio returned by resize_multichannel_image,
+               - (H, W) are the resized frame dimensions,
+               - scale_factor = 1/ratio rescales predictions back to original size,
+               - frames is a list of dicts {"path": ..., "channel": ...},
+               - fusion_paths is the list of JPEG paths (one per channel),
+               - fusion_meta maps JPEG path -> frame dict.
+    :rtype: tuple[str, object, list[dict], int, int, float, list[str], dict[str, dict]]
+    """
     out_dir = os.path.join(project, "predict", tif_base)
     os.makedirs(out_dir, exist_ok=True)
     ratio, frames, (H, W), (n, c) = build_channel_jpegs_from_tiff(tif_path, out_dir)
@@ -247,13 +287,38 @@ def prepare_frames_for_tiff(tif_path, project, tif_base):
     scale_factor = 1.0 / ratio
     fusion_paths = [f["path"] for f in frames]
     fusion_meta = {f["path"]: f for f in frames}
-    if not fusion_paths:
-        HF_log.warn(f"Skipping file '{tif_file}'")
-        continue
     HF_log.info(f"Processing '{tif_file}'")
+    return out_dir, ratio, frames, H, W, scale_factor, fusion_paths, fusion_meta
 
 
 def predict_on_frames(model, fusion_paths, project, tif_base, conf, imgsz, batch, device):
+    """
+    Run YOLO inference on a list of per-channel JPEG frames.
+
+    This is a thin wrapper around `ultralytics.YOLO.predict()` configured to:
+      - process all channel frames for a given TIFF,
+      - save overlay images under runs/predict/<tif_base>/ (save=True),
+      - return per-frame Results objects (boxes + optional masks).
+
+    :param model: Loaded ultralytics YOLO model.
+    :type model: ultralytics.YOLO
+    :param fusion_paths: List of JPEG paths (one per channel).
+    :type fusion_paths: list[str]
+    :param project: Root run directory (ultralytics "project" argument).
+    :type project: str
+    :param tif_base: Subdirectory name under project/predict/.
+    :type tif_base: str
+    :param conf: Confidence threshold for inference.
+    :type conf: float
+    :param imgsz: Inference image size.
+    :type imgsz: int | tuple[int, int]
+    :param batch: Batch size for inference.
+    :type batch: int
+    :param device: Device specifier ("cpu" or CUDA index).
+    :type device: str | int
+    :return: One ultralytics Results object per input frame.
+    :rtype: list[ultralytics.engine.results.Results]
+    """
     return model.predict(
         source=fusion_paths,
         batch=batch,
@@ -270,6 +335,31 @@ def predict_on_frames(model, fusion_paths, project, tif_base, conf, imgsz, batch
 
 
 def collect_detections(results, fusion_paths, fusion_meta, W, H):
+    """
+    Convert YOLO Results into a flat list of detection dicts annotated with channel id.
+
+    For each predicted instance, this function:
+      - clamps the bounding box to the resized frame bounds (W, H),
+      - extracts polygons either from YOLO masks (preferred) or from the binary mask
+        via OpenCV contours (fallback),
+      - records the channel index associated with the source frame.
+
+    The output format is designed to be consumed by the channel attribution /
+    consolidation stage (semantic selection across confocal channels).
+
+    :param results: YOLO results aligned with `fusion_paths`.
+    :type results: list[ultralytics.engine.results.Results]
+    :param fusion_paths: List of frame paths used for inference.
+    :type fusion_paths: list[str]
+    :param fusion_meta: Mapping frame path -> {"path": ..., "channel": ...}.
+    :type fusion_meta: dict[str, dict]
+    :param W: Resized frame width.
+    :type W: int
+    :param H: Resized frame height.
+    :type H: int
+    :return: List of detections with keys: cls, conf, xyxy, segs, channel.
+    :rtype: list[dict]
+    """
     all_dets = []
     for img_path, r in zip(fusion_paths, results):
         if getattr(r, "boxes", None) is None or r.boxes is None or r.boxes.shape[0] == 0:
@@ -308,20 +398,60 @@ def collect_detections(results, fusion_paths, fusion_meta, W, H):
 
             all_dets.append(det)
 
+    return all_dets
+
 
 def consolidate_to_coco(all_dets, frames, class_ids, whitelist_ids, tif_file, W, H, scale_factor):
-    # --- Channel attribution -------------------------------------------------
-    # We treat each confocal channel as an independent "candidate explanation" of the image.
-    # Detections are grouped by channel and each channel is scored by class evidence.
-    #
-    # Key idea:
-    #   one channel ≈ one fluorophore ≈ one dominant class (plus optional whitelist partners).
-    #
-    # This is semantic consolidation (class/channel assignment), not geometric ensembling:
-    # we do NOT merge boxes across channels based on IoU; we select which channel/class
-    # combinations are allowed to contribute annotations.
-    # -------------------------------------------------------------------------
-    
+    """
+    Consolidate per-channel detections into a single COCO annotation dict for one TIFF.
+
+    Rationale (confocal prior)
+    --------------------------
+    In confocal microscopy, each channel corresponds to one signal (fluorophore) and
+    typically to one target class, possibly with a small set of whitelist-approved
+    co-occurring classes. Therefore, consolidation is performed semantically:
+    channels are ranked by class evidence and only the most plausible channel/class
+    assignments are kept.
+
+    Procedure
+    ---------
+    1) Group detections by channel.
+    2) For each channel, compute per-class cumulative scores and select the dominant class.
+    3) Rank channels by (dominant class score, total score, detection count).
+    4) Traverse channels from strongest to weakest and keep:
+         - the dominant class if not already claimed,
+         - optional whitelist partners,
+         - or (if the dominant class is already claimed) only a whitelist-approved pair.
+    5) Rescale boxes/polygons back to the original TIFF scale and emit COCO annotations.
+
+    Guardrail (recommended, not implemented here)
+    ---------------------------------------------
+    Bleed-through and autofluorescence can create an overconfident but wrong dominant class.
+    A robust guardrail is to require a minimum dominance ratio per channel:
+
+        dominance = best_cls_score / total_score
+
+    Channels with dominance below a threshold (e.g. 0.6) can be rejected as ambiguous.
+
+    :param all_dets: Flat list of detection dicts produced by collect_detections().
+    :type all_dets: list[dict]
+    :param frames: Frame descriptors produced by prepare_frames_for_tiff().
+    :type frames: list[dict]
+    :param class_ids: Mapping class name -> class id.
+    :type class_ids: dict[str, int]
+    :param whitelist_ids: Set of allowed unordered class-id pairs (frozenset({a,b})).
+    :type whitelist_ids: set[frozenset[int]]
+    :param tif_file: TIFF filename (for COCO 'file_name').
+    :type tif_file: str
+    :param W: Resized frame width.
+    :type W: int
+    :param H: Resized frame height.
+    :type H: int
+    :param scale_factor: Factor applied to map resized coordinates back to original size.
+    :type scale_factor: float
+    :return: COCO-like dict with one image entry and consolidated annotations.
+    :rtype: dict
+    """
     # a) Build detection subsets per channel (skip empty channels).
     subsets = []
     for ch in range(len(frames)):
@@ -430,7 +560,7 @@ def consolidate_to_coco(all_dets, frames, class_ids, whitelist_ids, tif_file, W,
                 "segmentation": segmentation,
                 "iscrowd": 0,
                 "confidence": round(d["conf"], 4),
-                "hf_channel": ch, # ch ici = canal du subset_info (OK, 1-based si tes frames le sont)
+                "hf_channel": ch
             })
             ann_id += 1
 
@@ -537,17 +667,16 @@ def run():
     for tif_path in tiffs:
         tif_file = os.path.basename(tif_path)
         tif_base = os.path.splitext(tif_file)[0]
-        out_dir, ratio, frames, H, W, scale_factor, fusion_paths, fusion_meta = prepare_frames_for_tiff(tif_path, project, tif_base)
-  
+        out_dir, ratio, frames, H, W, scale_factor, fusion_paths, fusion_meta = prepare_frames_for_tiff(tif_path, tif_file, project, tif_base) 
+        if not fusion_paths:
+            HF_log.warn(f"Skipping file '{tif_file}'")
+            continue
         # Run predictions on all frames
         results = predict_on_frames(model, fusion_paths, project, tif_base, conf, imgsz, batch, device)
-
         # Collect detections (boxes + polygons)
         all_dets = collect_detections(results, fusion_paths, fusion_meta, W, H)
-
         # Consildate results and generate the output COCO file
         coco = consolidate_to_coco(all_dets, frames, class_ids, whitelist_ids, tif_file, W, H, scale_factor)
-
         # Save the output COCO file
         out_name = f"{tif_base}.json"
         with open(os.path.join(input_folder, out_name), "w") as f:
