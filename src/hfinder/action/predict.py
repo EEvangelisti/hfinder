@@ -16,7 +16,7 @@ Public API
 ----------
 - run(): Perform predictions from TIFFs, consolidate detections, and save results.
 - resolve_device(raw): Map user-specified device string/int to a valid PyTorch device.
-- build_fusions_for_tiff(): Generate fused RGB images from a multichannel TIFF.
+- build_channel_jpegs_from_tiff(): Generate fused RGB images from a multichannel TIFF.
 - consolidate_boxes_two_stage(): Apply cross-class filtering and intra-class consolidation.
 - coco_skeleton(): Build an empty COCO structure with given categories.
 """
@@ -27,20 +27,19 @@ import cv2
 import json
 import math
 import torch
-import random
 import tifffile
 import numpy as np
 from glob import glob
 from collections import defaultdict, Counter
 from ultralytics import YOLO
 
-from hfinder.core import log as HLog
-from hfinder.core import utils as HUtils
-from hfinder.core import palette as HPalette
-from hfinder.core import geometry as HGeom
-from hfinder.image import processing as HImageOps
-from hfinder.session import folders as HFolders
-from hfinder.session import settings as HSettings
+from hfinder.core import log as HF_log
+from hfinder.core import utils as HF_utils
+from hfinder.core import palette as HF_palette
+from hfinder.core import geometry as HF_geometry
+from hfinder.image import processing as HF_ImageOps
+from hfinder.session import folders as HF_folders
+from hfinder.session import settings as HF_settings
 
 
 
@@ -53,12 +52,16 @@ def resolve_device(raw):
     :return: "cpu" or CUDA device index.
     :rtype: str | int
     """
-    if isinstance(raw, str) and raw.strip().lower() == "cpu":
-        return "cpu"
-    if isinstance(raw, str) and raw.strip().lower() in ("auto", ""):
-        raw = None
+    if isinstance(raw, str):
+        raw = raw.strip().lower()   
+        if raw == "cpu":
+            return "cpu"
+        if raw in ("auto", ""):
+            raw = None
+
     if raw is None:
         return 0 if torch.cuda.is_available() else "cpu"
+
     try:
         idx = int(raw)
         return idx if torch.cuda.is_available() and (0 <= idx < torch.cuda.device_count()) else "cpu"
@@ -70,9 +73,9 @@ def resolve_device(raw):
 def build_whitelist_ids(whitelist_pairs_names, name_to_id):
     """
     Map class-name pairs to order-agnostic class-ID pairs.
-
-    Each valid name pair is converted to a frozenset of two class IDs,
-    so that (A, B) and (B, A) are treated identically.
+    Each valid name pair is converted to a frozenset of 
+    two class IDs, so that (A, B) and (B, A) are treated 
+    identically.
 
     :param whitelist_pairs_names: Iterable of class name pairs.
     :type whitelist_pairs_names: iterable[tuple[str, str] | list[str]]
@@ -88,24 +91,29 @@ def build_whitelist_ids(whitelist_pairs_names, name_to_id):
     }
 
 
-def build_fusions_for_tiff(tif_path, out_dir, rng=None):
+def build_channel_jpegs_from_tiff(tif_path, out_dir):
     """
-    Build fused RGB images from a multichannel TIFF.
+    Export each channel of a multichannel TIFF as a 
+    JPEG frame. The TIFF is resized via 
+    `HF_ImageOps.resize_multichannel_image()`, then
+    each channel is saved as an RGB JPEG where 
+    R = G = B (grayscale encoded in RGB).
 
-    :param tif_path: Path to input TIFF.
+    :param tif_path: Path to the input TIFF.
     :type tif_path: str
-    :param out_dir: Directory where frames are saved.
+    :param out_dir: Output directory for JPEG frames.
     :type out_dir: str
-    :param rng: Optional random generator for reproducibility.
-    :type rng: random.Random | None
-    :return: (list of (img_path, channels), (H,W), (n,c))
-    :rtype: tuple[list[tuple[str,tuple[int]]], tuple[int,int], tuple[int,int]]
+    :return: (ratio, frames, (H, W), (n, c)) where `frames` is a list of dicts
+             {"path": ..., "channel": ...}.
+    :rtype: tuple[object, list[dict[str, object]], tuple[int, int], tuple[int, int]]
     """
-    if rng is None:
-        rng = random.Random(0)
-
-    img = tifffile.imread(tif_path)
-    channels_dict, ratio, (n, c) = HImageOps.resize_multichannel_image(img)
+    with tifffile.TiffFile(tif_path) as tf:
+        series = tf.series[0]
+        img = series.asarray()
+        axes = series.axes
+    
+    # Note: in the current implementation, we always have n == 1
+    channels_dict, ratio, (n, c) = HF_ImageOps.resize_multichannel_image(img, axes=axes)
     all_channels = sorted(channels_dict.keys())
 
     os.makedirs(out_dir, exist_ok=True)
@@ -114,14 +122,8 @@ def build_fusions_for_tiff(tif_path, out_dir, rng=None):
     base = os.path.splitext(os.path.basename(tif_path))[0]
 
     for i in all_channels:
-        if n > 1 and False:
-            # TODO: Here we should first generate the MIP image to perform 
-            # predictions, then attribute channels, and later proceed to 
-            # individual channels.
-            pass
-
         out_path = os.path.join(out_dir, f"{base}_{i}.jpg")
-        HImageOps.save_gray_as_rgb(channels_dict[i], out_path)
+        HF_ImageOps.save_gray_as_rgb(channels_dict[i], out_path)
         frames.append({
             "path": out_path,
             "channel": i,
@@ -194,7 +196,7 @@ def channel_scores(det_subset):
     :rtype: tuple[int, float, float, dict[int, float]]
     """
     scores = defaultdict(float)
-    method = HSettings.get("power")
+    method = HF_settings.get("power")
 
     if method == "log":
         # Pre-define a function for the log-likelihood scoring
@@ -204,7 +206,7 @@ def channel_scores(det_subset):
         try:
             n = int(method)
         except Exception:
-            HLog.warn(f"Unknown method {method}")
+            HF_log.warn(f"Unknown method {method}")
             n = 4  # Fallback
         # Pre-define a function for power-based scoring
         def scoring(x, n=n):
@@ -236,56 +238,55 @@ def run():
     """
 
     # Retrieve YOLO model.
-    model_path = HSettings.get("model")
+    model_path = HF_settings.get("model")
     if not model_path:
-        HLog.fail("Model needed to perform predictions")
+        HF_log.fail("Model needed to perform predictions")
     if not os.path.exists(model_path):
-        HLog.fail(f"Model file not found: {model_path}")
+        HF_log.fail(f"Model file not found: {model_path}")
     model = YOLO(model_path)
 
     # Inference settings (confidence, image size, and batch size)
-    conf = HSettings.get("confidence")
-    imgsz = HSettings.get("size")
-    batch = HSettings.get("batch")
+    conf = HF_settings.get("confidence")
+    imgsz = HF_settings.get("size")
+    batch = HF_settings.get("batch")
 
     # Load (class id <-> name) mapping from the dataset YAML (kept stable across runs).
-    yaml_path = HSettings.get("yaml")
+    yaml_path = HF_settings.get("yaml")
     if not os.path.isfile(yaml_path):
-        HLog.fail(f"YAML file not found: {yaml_path}")
-    class_ids = HUtils.load_class_definitions_from_yaml(yaml_path)
+        HF_log.fail(f"YAML file not found: {yaml_path}")
+    class_ids = HF_utils.load_class_definitions_from_yaml(yaml_path)
     id_to_name = {v: k for k, v in class_ids.items()}
 
     # Optional whitelist of class pairs allowed to be overlaid when co-occurring 
     # (JSON list of name pairs, e.g., [["haustoria", "hyphae"]]).
     try:
-        wl_raw = HSettings.get("overlay_whitelist") or "[]"
+        wl_raw = HF_settings.get("overlay_whitelist") or "[]"
         wl_pairs = json.loads(wl_raw)
     except Exception:
         wl_pairs = []
     whitelist_ids = build_whitelist_ids(wl_pairs, class_ids)  # set of frozenset({idA,idB})
     if wl_pairs and not whitelist_ids:
-        HLog.warn("Overlay whitelist provided but no names matched class IDs from YAML.")
+        HF_log.warn("Overlay whitelist provided but no names matched class IDs from YAML.")
 
     # On CPU, limit PyTorch thread parallelism to reduce oversubscription.
-    device = resolve_device(HSettings.get("device"))
+    device = resolve_device(HF_settings.get("device"))
     if device == "cpu":
         torch.set_num_threads(max(1, (os.cpu_count() or 2) // 2))
         torch.set_num_interop_threads(1)
 
     # Input TIFFs
-    input_folder = HSettings.get("tiff_dir")
+    input_folder = HF_settings.get("tiff_dir")
     if not input_folder or not os.path.isdir(input_folder):
-        HLog.fail(f"Invalid directory: {input_folder}")
+        HF_log.fail(f"Invalid directory: {input_folder}")
     tiffs = sorted(glob(os.path.join(input_folder, "*.tif")) + \
                    glob(os.path.join(input_folder, "*.tiff")))
     if not tiffs:
-        HLog.warn(f"No TIFF files found in {input_folder}")
+        HF_log.warn(f"No TIFF files found in {input_folder}")
         return
 
-    project = HFolders.get_runs_dir()
-    HLog.info(f"Predicting on {len(tiffs)} TIFF(s) | conf={conf} | imgsz={imgsz} | device={device}")
+    project = HF_folders.get_runs_dir()
+    HF_log.info(f"Predicting on {len(tiffs)} TIFF(s) | conf={conf} | imgsz={imgsz} | device={device}")
 
-    # ---- TIFF loop -----------------------------------------------------------
     for tif_path in tiffs:
         tif_file = os.path.basename(tif_path)
         tif_base = os.path.splitext(tif_file)[0]
@@ -293,17 +294,16 @@ def run():
         os.makedirs(out_dir, exist_ok=True)
 
         # 1) Generate fused RGB images (same logic as training)
-        rng = random.Random(tif_base)  # deterministic per TIFF
-        ratio, frames, (H, W), (n, c) = build_fusions_for_tiff(tif_path, out_dir, rng=rng)
+        ratio, frames, (H, W), (n, c) = build_channel_jpegs_from_tiff(tif_path, out_dir)
         orig_W = int(round(W / ratio))
         orig_H = int(round(H / ratio))
         scale_factor = 1.0 / ratio
         fusion_paths = [f["path"] for f in frames]
         fusion_meta = {f["path"]: f for f in frames}
         if not fusion_paths:
-            HLog.warn(f"Skipping file '{tif_file}'")
+            HF_log.warn(f"Skipping file '{tif_file}'")
             continue
-        HLog.info(f"Processing '{tif_file}'")
+        HF_log.info(f"Processing '{tif_file}'")
 
         # 2) Run predictions on all frames
         results = model.predict(
@@ -351,7 +351,7 @@ def run():
 
                 # 1) Try masks.xy (handles (N,2) OR list of (N,2))
                 if xy_polys is not None and i < len(xy_polys) and xy_polys[i] is not None:
-                    det["segs"] = HGeom.polys_from_xy(xy_polys[i])
+                    det["segs"] = HF_geometry.polys_from_xy(xy_polys[i])
 
                 # 2) Fallback: contours from binary mask
                 if not det["segs"]:
@@ -360,7 +360,6 @@ def run():
                 all_dets.append(det)
 
         # Generating detection subsets for each channel
-        # FIXME: not robust if we also include MIP images
         subsets = []
         for ch in range(len(frames)):
             det_subset = [det for det in all_dets if det["channel"] == ch]
@@ -428,14 +427,14 @@ def run():
                 rescaled.append({
                     "cls": int(d["cls"]),
                     "conf": float(d["conf"]),
-                    "xyxy": HGeom.rescale_box_xyxy(d["xyxy"], scale_factor),
-                    "segs": [HGeom.rescale_seg_flat(seg, scale_factor) for seg in (d.get("segs") or [])],
+                    "xyxy": HF_geometry.rescale_box_xyxy(d["xyxy"], scale_factor),
+                    "segs": [HF_geometry.rescale_seg_flat(seg, scale_factor) for seg in (d.get("segs") or [])],
                 })
 
             for d in rescaled:
-                bbox_xywh = HGeom.bbox_xyxy_to_xywh(d["xyxy"])
+                bbox_xywh = HF_geometry.bbox_xyxy_to_xywh(d["xyxy"])
                 if d["segs"]:
-                    area = float(sum(HGeom.poly_area_xy(seg) for seg in d["segs"]))
+                    area = float(sum(HF_geometry.poly_area_xy(seg) for seg in d["segs"]))
                     segmentation = d["segs"]
                 else:
                     area = float(bbox_xywh[2] * bbox_xywh[3])
