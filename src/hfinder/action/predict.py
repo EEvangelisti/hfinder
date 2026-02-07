@@ -69,30 +69,23 @@ def resolve_device(raw):
 
 def build_whitelist_ids(whitelist_pairs_names, name_to_id):
     """
-    Convert class-name pairs into a set of class-ID pairs (order-agnostic).
+    Map class-name pairs to order-agnostic class-ID pairs.
 
-    Each input pair (e.g., ["haustoria", "hyphae"]) is mapped to their 
-    corresponding class IDs using `name_to_id`. We wrap the two IDs into a 
-    `frozenset`, which makes the pair:
-      - immutable (safe as a set element or dict key),
-      - order-agnostic (frozenset({a,b}) == frozenset({b,a})).
+    Each valid name pair is converted to a frozenset of two class IDs,
+    so that (A, B) and (B, A) are treated identically.
 
-    This way, (A,B) and (B,A) are treated as the same allowed overlay pair.
-
-    :param whitelist_pairs_names: List of class name pairs, e.g.
-                                  [["haustoria","hyphae"], ["nuclei","chloroplasts"]].
-    :type whitelist_pairs_names: list[list[str]]
-    :param name_to_id: Mapping from class name to class ID, e.g. {"nuclei": 0, "chloroplasts": 1}.
+    :param whitelist_pairs_names: Iterable of class name pairs.
+    :type whitelist_pairs_names: iterable[tuple[str, str] | list[str]]
+    :param name_to_id: Mapping from class names to class IDs.
     :type name_to_id: dict[str, int]
-    :return: Set of frozensets, each containing two class IDs that are whitelisted.
+    :return: Set of frozensets of class IDs.
     :rtype: set[frozenset[int]]
     """
-    wl = set()
-    for a, b in whitelist_pairs_names:
-        if a in name_to_id and b in name_to_id:
-            wl.add(frozenset({name_to_id[a], name_to_id[b]}))
-    return wl
-
+    return {
+        frozenset({name_to_id[a], name_to_id[b]})
+        for a, b in whitelist_pairs_names
+        if a in name_to_id and b in name_to_id
+    }
 
 
 def build_fusions_for_tiff(tif_path, out_dir, rng=None):
