@@ -558,22 +558,25 @@ def build_full_training_dataset():
     for img_path in image_paths:
         img_name = os.path.basename(img_path)
         HF_ImageInfo.set_current_image(img_name)
-        img_base = HF_ImageInfo.get_current_base()
-
+        
         # Skip image if it does not contain annotations.
         if not HF_ImageInfo.image_has_instructions():
             HF_log.warn(f"No annotations for {img_name} - SKIPPING")
             continue
 
+        with tifffile.TiffFile(img_path) as tf:
+            series = tf.series[0]
+            img = series.asarray()
+            axes = series.axes
+
         # Skip images with unsupported geometry.
-        img = tifffile.imread(img_path)
         if not HF_geometry.is_valid_image_format(img):
             HF_log.warn(f"File {img_name} shape ({img.shape}) is not allowed - SKIPPING")
             continue
 
         # Resize channels to the configured size
         # Note: for now n = 1, but we may activate individual frame processing in the future.
-        channels, ratio, (n, c) = HF_ImageOps.resize_multichannel_image(img)   
+        channels, ratio, (n, c) = HF_ImageOps.resize_multichannel_image(img, axes=axes)   
 
         # Step 1: Retrieve polygons or generate it from masks.
         # Step 2: Polygon post-processing to simplify and homogeneize vertices.
@@ -582,6 +585,7 @@ def build_full_training_dataset():
 
         # Step 1: Generate overlays for quality assessment.
         # Step 2: Save images and labels.
+        img_base = HF_ImageInfo.get_current_base()
         generate_contours(img_base, polygons_per_channel, channels, classes)
         export_yolo_images_and_labels(img_base, channels, polygons_per_channel)
 
