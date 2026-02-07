@@ -229,24 +229,110 @@ def channel_scores(det_subset):
 
 
 
-def run():
-    """
-    Run full prediction pipeline:
-      - Extract individual channels from TIFFs.
-      - Perform YOLO predictions.
-      - Consolidate detections.
-      - Save outputs (consolidated.json, coco.json).
-
-    :rtype: None
-    """
-
-    # Retrieve YOLO model.
+def load_yolo_model():
     model_path = HF_settings.get("model")
     if not model_path:
         HF_log.fail("Model needed to perform predictions")
     if not os.path.exists(model_path):
         HF_log.fail(f"Model file not found: {model_path}")
-    model = YOLO(model_path)
+    return YOLO(model_path)
+
+
+def collect_detections(results, fusion_paths, fusion_meta, W, H):
+    all_dets = []
+    for img_path, r in zip(fusion_paths, results):
+        if getattr(r, "boxes", None) is None or r.boxes is None or r.boxes.shape[0] == 0:
+            continue
+        meta = fusion_meta.get(img_path, {})
+        channel = meta.get("channel")
+        xyxy = r.boxes.xyxy.detach().cpu().numpy()
+        confs = r.boxes.conf.detach().cpu().numpy()
+        clss = r.boxes.cls.detach().cpu().numpy().astype(int)
+
+        xy_polys = None
+        if getattr(r, "masks", None) is not None and getattr(r.masks, "xy", None) is not None:
+            xy_polys = r.masks.xy  # can be list-of-arrays or single (N,2) per instance
+
+        for i, (bb, sc, cc) in enumerate(zip(xyxy, confs, clss)):
+            # Clamp to (W,H)
+            x1 = float(max(0.0, min(bb[0], W)))
+            y1 = float(max(0.0, min(bb[1], H)))
+            x2 = float(max(0.0, min(bb[2], W)))
+            y2 = float(max(0.0, min(bb[3], H)))
+            det = {
+                "cls": int(cc),
+                "conf": float(sc),
+                "xyxy": np.array([x1, y1, x2, y2], dtype=np.float32),
+                "segs": [],
+                "channel": channel
+            }
+
+            # Try masks.xy (handles (N,2) OR list of (N,2))
+            if xy_polys is not None and i < len(xy_polys) and xy_polys[i] is not None:
+                det["segs"] = HF_geometry.polys_from_xy(xy_polys[i])
+
+            # Fallback: contours from binary mask
+            if not det["segs"]:
+                det["segs"] = polys_from_mask_i(r, i)
+
+            all_dets.append(det)
+
+
+
+def run():
+    """
+    Run the HFinder prediction pipeline on a directory of multichannel TIFF files.
+
+    Overview
+    --------
+    For each TIFF:
+      1) Export one RGB JPEG per channel (grayscale encoded as R=G=B) after resizing.
+      2) Run YOLO inference independently on each channel frame.
+      3) Attribute detections to channels and consolidate them across channels using
+         class-level competition and optional whitelist-based co-occurrence rules.
+      4) Export a single COCO JSON (one COCO image per TIFF) with consolidated annotations.
+
+    Channel attribution and consolidation rationale
+    -----------------------------------------------
+    Confocal imaging provides a strong prior: one channel corresponds to one signal
+    (one fluorophore), hence typically to one class, or to a small set of allowed
+    co-occurring classes. Therefore, consolidation is performed *semantically* rather
+    than geometrically (no multi-channel IoU voting / NMS).
+
+    The procedure is:
+      - Group detections by channel.
+      - For each channel, compute per-class scores (default: sum(conf^n), or log scoring),
+        and identify the dominant class ("best").
+      - Rank channels by dominance (best class score, then total score, then count).
+      - Traverse channels from strongest to weakest and decide which classes to keep:
+          * If the dominant class was not assigned yet, keep it (and optionally its
+            whitelist partners).
+          * If the dominant class was already assigned by a stronger channel, only keep
+            this channel if it supports an allowed co-occurring pair (via whitelist).
+      - Emit COCO annotations from the retained detections, rescaled back to original size,
+        and store the chosen channel as metadata (hf_channel).
+
+    Safety guardrail (not implemented yet)
+    --------------------------------------
+    A common confocal failure mode is bleed-through/autofluorescence leading to an
+    overconfident but wrong "dominant" class. A simple guardrail is to require a minimum
+    dominance ratio per channel:
+
+        dominance = best_cls_score / total_score
+
+    If dominance is below a threshold (e.g. 0.6), the channel is considered ambiguous
+    and can be skipped or down-weighted. This prevents a noisy channel with scattered
+    detections from dominating the consolidation.
+
+    Outputs
+    -------
+    - Writes <tif_base>.json in the input TIFF directory (COCO-like structure).
+    - YOLO overlays are saved under the run folder (ultralytics 'save=True').
+
+    :rtype: None
+    """
+
+    model = load_yolo_model()
 
     # Inference settings (confidence, image size, and batch size)
     conf = HF_settings.get("confidence")
@@ -267,7 +353,7 @@ def run():
         wl_pairs = json.loads(wl_raw)
     except Exception:
         wl_pairs = []
-    whitelist_ids = build_whitelist_ids(wl_pairs, class_ids)  # set of frozenset({idA,idB})
+    whitelist_ids = build_whitelist_ids(wl_pairs, class_ids)
     if wl_pairs and not whitelist_ids:
         HF_log.warn("Overlay whitelist provided but no names matched class IDs from YAML.")
 
@@ -296,7 +382,7 @@ def run():
         out_dir = os.path.join(project, "predict", tif_base)
         os.makedirs(out_dir, exist_ok=True)
 
-        # 1) Generate fused RGB images (same logic as training)
+        # 1) Save individual channels as images for prediction
         ratio, frames, (H, W), (n, c) = build_channel_jpegs_from_tiff(tif_path, out_dir)
         orig_W = int(round(W / ratio))
         orig_H = int(round(H / ratio))
@@ -324,45 +410,21 @@ def run():
         )
 
         # 3) Collect detections (boxes + polygons)
-        all_dets = []
-        for img_path, r in zip(fusion_paths, results):
-            if getattr(r, "boxes", None) is None or r.boxes is None or r.boxes.shape[0] == 0:
-                continue
-            meta = fusion_meta.get(img_path, {})
-            channel = meta.get("channel")
-            xyxy = r.boxes.xyxy.detach().cpu().numpy()
-            confs = r.boxes.conf.detach().cpu().numpy()
-            clss = r.boxes.cls.detach().cpu().numpy().astype(int)
-
-            xy_polys = None
-            if getattr(r, "masks", None) is not None and getattr(r.masks, "xy", None) is not None:
-                xy_polys = r.masks.xy  # can be list-of-arrays or single (N,2) per instance
-
-            for i, (bb, sc, cc) in enumerate(zip(xyxy, confs, clss)):
-                # Clamp to (W,H)
-                x1 = float(max(0.0, min(bb[0], W)))
-                y1 = float(max(0.0, min(bb[1], H)))
-                x2 = float(max(0.0, min(bb[2], W)))
-                y2 = float(max(0.0, min(bb[3], H)))
-                det = {
-                    "cls": int(cc),
-                    "conf": float(sc),
-                    "xyxy": np.array([x1, y1, x2, y2], dtype=np.float32),
-                    "segs": [],
-                    "channel": channel
-                }
-
-                # 1) Try masks.xy (handles (N,2) OR list of (N,2))
-                if xy_polys is not None and i < len(xy_polys) and xy_polys[i] is not None:
-                    det["segs"] = HF_geometry.polys_from_xy(xy_polys[i])
-
-                # 2) Fallback: contours from binary mask
-                if not det["segs"]:
-                    det["segs"] = polys_from_mask_i(r, i)
-
-                all_dets.append(det)
-
-        # Generating detection subsets for each channel
+        all_dets = collect_detections(results, fusion_paths, fusion_meta, W, H)
+       
+        # --- Channel attribution -------------------------------------------------
+        # We treat each confocal channel as an independent "candidate explanation" of the image.
+        # Detections are grouped by channel and each channel is scored by class evidence.
+        #
+        # Key idea:
+        #   one channel ≈ one fluorophore ≈ one dominant class (plus optional whitelist partners).
+        #
+        # This is semantic consolidation (class/channel assignment), not geometric ensembling:
+        # we do NOT merge boxes across channels based on IoU; we select which channel/class
+        # combinations are allowed to contribute annotations.
+        # -------------------------------------------------------------------------
+        
+        # a) Build detection subsets per channel (skip empty channels).
         subsets = []
         for ch in range(len(frames)):
             det_subset = [det for det in all_dets if det["channel"] == ch]
@@ -370,16 +432,26 @@ def run():
                 continue
             subsets.append((ch, det_subset))
        
-        # Sorting subsets by detection score:
+        # b) Score each channel: compute per-class cumulative score and dominant class.
+        # channel_scores() returns:
+        #   - best_cls: argmax_c sum(conf^n) (or log scoring)
+        #   - best_cls_score: that max score
+        #   - total_score: sum over classes
+        #   - scores: per-class score map
         subset_info = []
         for ch, det_subset in subsets:
             best_cls, best_cls_score, total_score, scores = channel_scores(det_subset)
+            # Guardrail (NOT IMPLEMENTED): reject ambiguous channels.
+            # dominance = best_cls_score / max(total_score, 1e-12)
+            # if dominance < DOMINANCE_MIN:
+            #     continue
             subset_info.append((ch, det_subset, best_cls, best_cls_score, total_score, scores))
 
-        # Sort by (best_cls_score, total_score, count)
+        # c) Rank channels from strongest to weakest.
+        # Primary: dominant class evidence, Secondary: overall evidence, Tertiary: detection count.
         subset_info.sort(key=lambda t: (t[3], t[4], len(t[1])), reverse=True)
        
-        # ---- COCO skeleton
+        # COCO skeleton
         coco = coco_skeleton(class_ids)
         image_id = 1
         coco["images"].append({
@@ -390,13 +462,21 @@ def run():
         })
         ann_id = 1  # global per TIFF
 
+        # d) Traverse channels in ranked order and decide which classes are allowed to survive.
+        # already_assigned tracks dominant/kept classes already claimed by stronger channels.
         already_assigned = set()
         for ch, subset, best, best_score, total_score, scores in subset_info:
             if not scores:
                 continue
 
+            # Classes predicted in this channel.
             present = set(scores.keys())
 
+            # If this channel's dominant class was already claimed by a stronger channel,
+            # we only keep this channel if it supports a whitelist-approved co-occurrence
+            # (i.e., two classes allowed to overlay in the same acquisition context).
+            # Otherwise, we keep the dominant class and optionally add whitelist partners
+            # (classes allowed to co-occur with the dominant one).
             if best in already_assigned:
                 pairs = [
                     (c, a) for c in present for a in present
