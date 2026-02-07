@@ -1,26 +1,29 @@
 """
-Prediction from TIFFs with channel-fusion ensembling and vote consolidation.
+Prediction pipeline for multichannel TIFF images.
 
-This module implements the prediction stage of HFinder:
-- TIFF files are converted into fused RGB images using the same 
-  channel-combination logic as during training.
-- YOLOv8 predictions are run across all fused images.
-- Detections are consolidated in two stages:
-    1. Cross-class filtering (objects cannot belong to two classes).
-    2. Intra-class consolidation (IoU-based voting).
-- Results are exported in two formats:
-    - consolidated.json (custom format with votes, boxes, polygons),
-    - coco.json (COCO-compatible annotations with boxes + polygons).
+This module implements the prediction stage of HFinder.
+Multichannel TIFF files are decomposed into per-channel RGB JPEG images
+(grayscale encoded as R=G=B). Object detection is performed independently
+on each channel, and detections are then consolidated using class-level
+competition and optional co-occurrence rules.
+
+Key steps
+---------
+- Load multichannel TIFF images.
+- Export one RGB JPEG per channel.
+- Run YOLO predictions on each channel independently.
+- Rank channels using confidence-based scoring.
+- Enforce cross-class exclusivity, with optional whitelist-based co-occurrence.
+- Export consolidated results in COCO-compatible JSON format.
 
 Public API
 ----------
-- run(): Perform predictions from TIFFs, consolidate detections, and save results.
-- resolve_device(raw): Map user-specified device string/int to a valid PyTorch device.
-- build_channel_jpegs_from_tiff(): Generate fused RGB images from a multichannel TIFF.
-- consolidate_boxes_two_stage(): Apply cross-class filtering and intra-class consolidation.
-- coco_skeleton(): Build an empty COCO structure with given categories.
+- run(): Run predictions from TIFFs and export results.
+- resolve_device(raw): Normalize user-specified device identifiers.
+- build_channel_jpegs_from_tiff(): Export per-channel JPEGs from a TIFF.
+- build_whitelist_ids(): Build allowed class co-occurrence rules.
+- coco_skeleton(): Build an empty COCO annotation structure.
 """
-
 
 import os
 import cv2
