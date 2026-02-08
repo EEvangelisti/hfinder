@@ -144,7 +144,7 @@ def _assign_validation_greedy(
     indices_per_class: dict[int, list[int]],
     target_val: int,
     target_per_class_val: dict[int, float],
-) -> tuple[list[bool], Counter, int]:
+) -> -> tuple[list[bool], Counter, int, list[bool]]:
     """Greedy validation assignment prioritising under-covered (often rare) classes.
 
     Strategy
