@@ -44,18 +44,7 @@ from hfinder.session import settings as HF_settings
 
 
 def _discover_training_images(img_dir: str) -> list[str]:
-    """Return sorted list of training image paths (YOLO layout).
-
-    Parameters
-    ----------
-    img_dir : str
-        Directory containing training images.
-
-    Returns
-    -------
-    list[str]
-        Sorted list of absolute image paths (e.g. *.jpg).
-    """
+    """Return sorted list of training image paths (YOLO layout)."""
     return sorted(glob(os.path.join(img_dir, "*.jpg")))
 
 
