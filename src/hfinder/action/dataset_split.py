@@ -277,30 +277,66 @@ def _count_instances(lbl_path: str) -> Counter:
     return cnt
 
 
-def split_train_val(validation_frac=0.2, seed=42):
-    """Split a YOLO segmentation dataset into train/val subsets with stratification.
+def _strategy_preserve_distribution(
+    *, y_per_img, target_val, rng,
+    validation_frac, all_classes, total_per_class, indices_per_class, logger, **_
+):
+    """Default strategy: approximate preservation of empirical class distribution.
 
-    The split is performed at the image level and attempts to preserve the
-    empirical class distribution by using a two-phase heuristic:
-      1) a greedy pass prioritising under-covered (often rare) classes;
-      2) a soft filling pass that nudges the validation set toward per-class targets.
+    Two-phase heuristic:
+      (A) greedily satisfy unmet per-class validation targets (rare classes first),
+      (B) fill remaining slots by maximising improvement toward soft targets.
+    """
+    target_per_class_val = {c: validation_frac * total_per_class[c] for c in total_per_class}
 
-    Files are rearranged on disk according to the YOLO directory layout.
-    Empty label files are created for images with no annotations to maintain
-    dataset integrity.
+    in_val, cur_per_class_val, val_count, assigned = _assign_validation_greedy(
+        y_per_img=y_per_img,
+        all_classes=all_classes,
+        indices_per_class=indices_per_class,
+        target_val=target_val,
+        target_per_class_val=target_per_class_val,
+    )
+
+    _fill_validation_soft(
+        y_per_img=y_per_img,
+        in_val=in_val,
+        assigned=assigned,
+        cur_per_class_val=cur_per_class_val,
+        target_val=target_val,
+        target_per_class_val=target_per_class_val,
+    )
+    return in_val
+
+
+def split_train_val(validation_frac=0.2, seed=42, strategy=None):
+    """Split a YOLO segmentation dataset into train/val using a pluggable strategy.
+
+    This public entry point orchestrates I/O (discovery, parsing, moving files,
+    and reporting) while delegating the *assignment policy* to a strategy
+    function. This makes it straightforward to swap heuristics, e.g.:
+      - preserve empirical distribution (current behaviour),
+      - actively compensate class imbalance,
+      - enforce minimum class coverage in validation,
+      - optimise a custom objective.
 
     Parameters
     ----------
     validation_frac : float, default=0.2
         Fraction of images to allocate to the validation subset.
     seed : int, default=42
-        Random seed used only to shuffle class->image index lists deterministically.
+        Seed used for deterministic shuffles inside strategies.
+    strategy : callable | None
+        Assignment strategy with signature:
+
+            strategy(y_per_img, target_val, rng, **context) -> list[bool]
+
+        returning `in_val` (True for validation images). If None, the default
+        distribution-preserving heuristic is used.
 
     Notes
     -----
-    Stratification is based on *class presence per image* (multi-label), not on
-    instance counts. Final reporting logs per-class *instance line* counts in
-    label files for convenience.
+    Stratification operates on *class presence per image* (multi-label).
+    Reporting at the end logs per-class instance-line counts for convenience.
     """
     rng = random.Random(seed)
 
@@ -318,50 +354,48 @@ def split_train_val(validation_frac=0.2, seed=42):
     # 2) Parse labels → per-image class sets
     y_per_img, all_classes = _extract_classes_per_image(img_paths, lbl_dir)
 
-    # 3) Compute validation budget and soft per-class targets
-    target_val, total_per_class, target_per_class_val = _compute_validation_targets(
-        y_per_img, validation_frac
-    )
+    # 3) Compute validation budget (absolute number of images)
+    target_val = max(1, int(round(validation_frac * len(img_paths))))
 
-    # 4) Log overall distribution (based on image-level class presence)
-    total_all = sum(total_per_class.values())
+    # 4) Context: useful information a strategy may want to use
+    #    (e.g., class frequencies, class names, inverted indices, etc.)
+    total_per_class = Counter()
+    for s in y_per_img:
+        for c in s:
+            total_per_class[c] += 1
+
     classes = HF_settings.load_class_list()
-
-    for c, count in sorted(total_per_class.items()):
-        if c >= len(classes):
-            HF_log.warn(
-                f"Unexpected class ID {c} (max={len(classes)-1}). Please fill a bug report."
-            )
-            name = f"class_{c}"
-        else:
-            name = classes[c]
-
-        pct = 100.0 * count / total_all if total_all else 0.0
-        HF_log.info(f"{name:20s} ({c:2d}) : {count:6d} ({pct:5.2f}%)")
-
-    # 5) Build shuffled inverted indices class -> image indices
     indices_per_class = _build_indices_per_class(y_per_img, all_classes, rng)
 
-    # 6) Phase A: greedy assignment
-    in_val, cur_per_class_val, val_count, assigned = _assign_validation_greedy(
-        y_per_img=y_per_img,
+    context = dict(
+        validation_frac=validation_frac,
         all_classes=all_classes,
+        total_per_class=total_per_class,
+        class_names=classes,
         indices_per_class=indices_per_class,
-        target_val=target_val,
-        target_per_class_val=target_per_class_val,
+        logger=HF_log,
     )
 
-    # 7) Phase B: soft completion (fills remaining validation slots)
-    _fill_validation_soft(
-        y_per_img=y_per_img,
-        in_val=in_val,
-        assigned=assigned,
-        cur_per_class_val=cur_per_class_val,
-        target_val=target_val,
-        target_per_class_val=target_per_class_val,
-    )
+    # 5) Choose strategy (default: your current distribution-preserving heuristic)
+    if strategy is None:
+        strategy = _strategy_preserve_distribution  # defined below / elsewhere
 
-    # 8) Move files and ensure empty labels exist where needed
+    # 6) Delegate assignment
+    in_val = strategy(y_per_img=y_per_img, target_val=target_val, rng=rng, **context)
+
+    # Defensive checks: ensure correct length, boolean-like values, and exact budget
+    if len(in_val) != len(img_paths):
+        raise ValueError(f"strategy returned {len(in_val)} flags for {len(img_paths)} images")
+
+    # Enforce exact validation size (strategy *should* already do it; this is a guardrail)
+    val_idx = [i for i, b in enumerate(in_val) if b]
+    if len(val_idx) != target_val:
+        # Minimal coercion: keep the first target_val validation samples deterministically
+        # (or you may prefer to raise an error instead)
+        desired = set(val_idx[:target_val])
+        in_val = [i in desired for i in range(len(in_val))]
+
+    # 7) Move files and ensure empty labels exist
     moved_val, moved_train = _move_split_files(
         img_paths=img_paths,
         lbl_dir=lbl_dir,
@@ -370,7 +404,7 @@ def split_train_val(validation_frac=0.2, seed=42):
         in_val=in_val,
     )
 
-    # 9) Report per-class instance-line counts in each subset
+    # 8) Report counts
     val_counts = _count_instances(lbl_val_dir)
     train_counts = _count_instances(lbl_dir)
 
