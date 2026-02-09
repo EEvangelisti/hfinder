@@ -38,6 +38,7 @@ import random
 import shutil
 from glob import glob
 from collections import Counter
+from collections.abc import Sequence, Mapping, Callable
 from hfinder.core import log as HF_log
 from hfinder.session import folders as HF_folders
 from hfinder.session import settings as HF_settings
@@ -48,26 +49,16 @@ def _discover_training_images(img_dir: str) -> list[str]:
     return sorted(glob(os.path.join(img_dir, "*.jpg")))
 
 
-def _extract_classes_per_image(img_paths: list[str], lbl_dir: str) -> tuple[list[set[int]], set[int]]:
-    """Parse YOLO label files and infer class presence per image.
+def _extract_classes_per_image(
+    img_paths: list[str],
+    lbl_dir: str
+) -> tuple[list[set[int]], set[int]]:
+    """
+    Infer YOLO class presence per image from label files.
 
-    For each image path, the corresponding label file is assumed to be
-    `<stem>.txt` in `lbl_dir`. Each non-empty line is expected to start with a
-    class ID (integer). Malformed lines are ignored.
-
-    Parameters
-    ----------
-    img_paths : list[str]
-        List of image paths.
-    lbl_dir : str
-        Directory containing YOLO label files.
-
-    Returns
-    -------
-    (list[set[int]], set[int])
-        - y_per_img: list where each element is the set of class IDs present
-          in the image.
-        - all_classes: union of all class IDs observed across images.
+    For each image, reads the corresponding `<stem>.txt` file in `lbl_dir`
+    and collects the class IDs appearing as the first field of each line.
+    Invalid or malformed lines are ignored.
     """
     y_per_img: list[set[int]] = []
     all_classes: set[int] = set()
@@ -95,27 +86,21 @@ def _extract_classes_per_image(img_paths: list[str], lbl_dir: str) -> tuple[list
     return y_per_img, all_classes
 
 
-def _compute_validation_targets(y_per_img: list[set[int]], validation_frac: float) -> tuple[int, Counter, dict[int, float]]:
-    """Compute overall and per-class soft targets for the validation set.
 
-    The per-class targets are *soft* (floating-point), derived as:
-        target_per_class_val[c] = validation_frac * total_per_class[c]
-
-    Parameters
-    ----------
-    y_per_img : list[set[int]]
-        Class sets per image.
-    validation_frac : float
-        Desired validation fraction (e.g. 0.2).
-
-    Returns
-    -------
-    (int, Counter, dict[int, float])
-        - target_val: desired number of validation images (>= 1).
-        - total_per_class: counts of images containing each class.
-        - target_per_class_val: soft per-class targets for validation.
+def _compute_validation_targets(
+    y_per_img: list[set[int]],
+    validation_frac: float
+) -> tuple[int, Counter, dict[int, float]]:
     """
+    Compute global and per-class validation targets from image labels.
+
+    Returns the desired number of validation images, per-class occurrence
+    counts, and soft per-class validation targets proportional to
+    `validation_frac`.
+    """
+
     n = len(y_per_img)
+    # Ensure at least one validation image.
     target_val = max(1, int(round(validation_frac * n)))
 
     total_per_class = Counter()
@@ -127,7 +112,12 @@ def _compute_validation_targets(y_per_img: list[set[int]], validation_frac: floa
     return target_val, total_per_class, target_per_class_val
 
 
-def _build_indices_per_class(y_per_img: list[set[int]], all_classes: set[int], rng: random.Random) -> dict[int, list[int]]:
+
+def _build_indices_per_class(
+    y_per_img: list[set[int]],
+    all_classes: set[int],
+    rng: random.Random
+) -> dict[int, list[int]]:
     """Build and shuffle inverted indices: class -> image indices containing it."""
     indices_per_class = {c: [] for c in all_classes}
     for i, s in enumerate(y_per_img):
@@ -200,7 +190,8 @@ def _fill_validation_soft(
     target_val: int,
     target_per_class_val: dict[int, float],
 ) -> None:
-    """Fill remaining validation slots by maximising improvement toward soft targets."""
+    """Fill remaining validation slots by maximising improvement toward soft targets.
+    """
 
     def remaining_need(c: int) -> float:
         return target_per_class_val.get(c, 0.0) - cur_per_class_val[c]
@@ -222,13 +213,14 @@ def _fill_validation_soft(
             cur_per_class_val[c] += 1
 
 
-def _move_split_files(img_paths: list[str], lbl_dir: str, img_val_dir: str, lbl_val_dir: str, in_val: list[bool]) -> tuple[int, int]:
-    """Move validation files; keep training files in place; ensure empty labels exist.
-
-    Returns
-    -------
-    (moved_val, moved_train)
-    """
+def _move_split_files(
+    img_paths: list[str],
+    lbl_dir: str,
+    img_val_dir: str,
+    lbl_val_dir: str,
+    in_val: list[bool]
+) -> tuple[int, int]:
+    """Move validation files; keep training files in place; ensure empty labels exist."""
     moved_val = moved_train = 0
 
     for i, ip in enumerate(img_paths):
@@ -267,14 +259,23 @@ def _count_instances(lbl_path: str) -> Counter:
 
 
 def _strategy_preserve_distribution(
-    *, y_per_img, target_val, rng,
-    validation_frac, all_classes, total_per_class, indices_per_class, logger, **_
-):
-    """Default strategy: approximate preservation of empirical class distribution.
+    *,
+    y_per_img: Sequence[set[int]],
+    target_val: int,
+    rng: random.Random,
+    validation_frac: float,
+    all_classes: set[int],
+    total_per_class: Counter[int],
+    indices_per_class: Mapping[int, Sequence[int]],
+    logger: Callable[[str], None] | None = None,
+    **_: object,
+) -> list[bool]:
+    """
+    Approximate preservation of the empirical class distribution in the validation split.
 
     Two-phase heuristic:
-      (A) greedily satisfy unmet per-class validation targets (rare classes first),
-      (B) fill remaining slots by maximising improvement toward soft targets.
+    (A) greedily satisfy unmet per-class validation targets (rare classes first),
+    (B) fill remaining slots by maximizing improvement toward soft targets.
     """
     target_per_class_val = {c: validation_frac * total_per_class[c] for c in total_per_class}
 
