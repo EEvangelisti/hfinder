@@ -12,8 +12,8 @@ We recommend using a **virtual environment** to avoid conflicts with system pack
 
 ```bash
 # 1. Create and activate a virtual environment
-python3 -m venv hfinder
-source hfinder/bin/activate  # On Windows: hfinder\Scripts\activate
+python3 -m venv hfinder_env
+source hfinder_env/bin/activate  # On Windows: hfinder_env\Scripts\activate
 
 # 2. Install HFinder
 pip install . # or `pip install -e .`, if you will be changing the code
