@@ -16,7 +16,7 @@ python3 -m venv hfinder
 source hfinder/bin/activate  # On Windows: hfinder\Scripts\activate
 
 # 2. Install HFinder
-pip install .
+pip install . # or `pip install -e .`, if you will be changing the code
 
 # 3. Verify the installation
 hfinder --help
