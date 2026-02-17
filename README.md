@@ -70,3 +70,14 @@ A pre-trained model is required:
 
 HFinder includes additional tools to explore predictions, analyze signals, and measure distances.  
 For an introduction to these auxiliary scripts, see the [Toolbox guide](doc/toolbox.md).
+
+
+### How to cite?
+
+If you use HFinder in your research, consider citing:
+
+Korovesis S, Wang S, Xu L, Giraudon I, Rosales Hernandez D, Panek E, Boeglin L, 
+Kostareli M-M, Pluis MHJ, Wang B, Wang Y, Abdennour D, Keller H, Birch PRJ, Schornack S, Evangelisti E. 2026. 
+Deep learning enables quantitative subcellular analysis of plant-microbe interfaces. *bioRxiv*.
+doi: 10.64898/2026.02.05.703961
+
