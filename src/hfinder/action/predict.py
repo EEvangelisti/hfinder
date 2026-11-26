@@ -454,7 +454,8 @@ def consolidate_to_coco(all_dets, frames, class_ids, whitelist_ids, tif_file, W,
     """
     # a) Build detection subsets per channel (skip empty channels).
     subsets = []
-    for ch in range(len(frames)):
+    for frame in frames:
+        ch = frame["channel"]
         det_subset = [det for det in all_dets if det["channel"] == ch]
         if not det_subset:
             continue
