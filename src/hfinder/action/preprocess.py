@@ -533,12 +533,18 @@ def build_full_training_dataset():
         glob(os.path.join(tiff_dir, "*.tiff"))
     )
 
-    # May filter out some files if a manifest file is present.
+    # Optionally filter images using a manifest.
     mf = HF_settings.get("manifest")
-    if mf is not None:
-        manifest_path = os.path.join(tiff_dir, "hf_instructions", mf)
+
+    if mf and str(mf).strip():
+        manifest_path = os.path.join(tiff_dir, "hf_instructions", mf.strip())
+
+        if not os.path.isfile(manifest_path):
+            raise FileNotFoundError(f"Invalid manifest file: {manifest_path}")
+
         with open(manifest_path, "r", encoding="utf-8") as f:
             manifest = set(json.load(f))
+
         image_paths = [p for p in image_paths if os.path.basename(p) in manifest]
         HF_log.info(f"Manifest: {len(image_paths)} images kept from {manifest_path}")
 
@@ -546,6 +552,9 @@ def build_full_training_dataset():
         missing = sorted(manifest - {os.path.basename(p) for p in image_paths})
         if missing:
             HF_log.warn(f"{len(missing)} manifest images not found in {tiff_dir} (showing up to 10): {missing[:10]}")
+
+    else:
+        HF_log.info(f"No manifest provided: using all {len(image_paths)} TIFF images")
 
     # Load allowed classes.
     classes = HF_settings.load_class_list()
